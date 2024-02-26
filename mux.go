@@ -30,7 +30,7 @@ func NewMux(mux StandardMultiplexer) *Mux {
 
 func (m *Mux) HandleHttp(pattern string, handler Handler) {
 	m.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-		ctx := &Context{w, r, r.Context(), nil}
+		ctx := &Context{w, r, r.Context(), map[any]any{}}
 		for _, mw := range m.middleware {
 			err := mw(ctx)
 			if err != nil {
