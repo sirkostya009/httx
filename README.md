@@ -6,7 +6,7 @@ middleware, error handling and response writing for a price of a small startup o
 ## Usage
 
 ```go
-mux := httx.NewMux(http.DefaultServeMux) // I mean, why the hell not use the default serve mux?
+mux := httx.NewServeMux(http.DefaultServeMux) // I mean, why the hell not use the default serve mux?
 
 // Middleware must be initialized before any route
 mux.Pre(func(ctx *httx.Context) error {
