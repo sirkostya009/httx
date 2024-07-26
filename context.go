@@ -1,4 +1,4 @@
-package tinymux
+package httx
 
 import (
 	"context"
@@ -28,23 +28,13 @@ func (ctx *Context) Redirect(status int, url string) error {
 func (ctx *Context) WriteXML(status int, a any) error {
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/xml")
 	ctx.WriteHeader(status)
-	b, err := xml.Marshal(a)
-	if err != nil {
-		return err
-	}
-	_, err = ctx.ResponseWriter.Write(b)
-	return err
+	return xml.NewEncoder(ctx.ResponseWriter).Encode(a)
 }
 
 func (ctx *Context) WriteJSON(status int, a any) error {
 	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 	ctx.WriteHeader(status)
-	b, err := json.Marshal(a)
-	if err != nil {
-		return err
-	}
-	_, err = ctx.ResponseWriter.Write(b)
-	return err
+	return json.NewEncoder(ctx.ResponseWriter).Encode(a)
 }
 
 func (ctx *Context) WriteCSV(status int, CRLF bool, separator rune, data [][]string) error {
@@ -56,7 +46,27 @@ func (ctx *Context) WriteCSV(status int, CRLF bool, separator rune, data [][]str
 	return w.WriteAll(data)
 }
 
+func (ctx *Context) ReadJSON(a any) error {
+	return json.NewDecoder(ctx.Body).Decode(a)
+}
+
+func (ctx *Context) ReadXML(a any) error {
+	return xml.NewDecoder(ctx.Body).Decode(a)
+}
+
+func (ctx *Context) ReadCSV(separator rune) *csv.Reader {
+	r := csv.NewReader(ctx.Body)
+	r.Comma = separator
+	return r
+}
+
 func (ctx *Context) Set(key, value any) {
+	// this assumes that users mostly don't use the Set method hence
+	// the values map is not initialized until the first call to Set
+	// to avoid the overhead of initializing the map per every request
+	if ctx.values == nil {
+		ctx.values = map[any]any{}
+	}
 	ctx.values[key] = value
 }
 
