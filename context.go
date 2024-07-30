@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"net/http"
+	"strconv"
 )
 
 type Context struct {
@@ -20,25 +21,25 @@ func (ctx *Context) WriteString(s string) (int, error) {
 }
 
 func (ctx *Context) Redirect(status int, url string) error {
-	ctx.ResponseWriter.Header().Set("Location", url)
+	ctx.ResponseWriter.Header()["Location"] = []string{url}
 	ctx.WriteHeader(status)
 	return nil
 }
 
 func (ctx *Context) WriteXML(status int, a any) error {
-	ctx.ResponseWriter.Header().Set("Content-Type", "application/xml")
+	ctx.ResponseWriter.Header()["Content-Type"] = []string{"application/xml"}
 	ctx.WriteHeader(status)
 	return xml.NewEncoder(ctx.ResponseWriter).Encode(a)
 }
 
 func (ctx *Context) WriteJSON(status int, a any) error {
-	ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
+	ctx.ResponseWriter.Header()["Content-Type"] = []string{"application/json"}
 	ctx.WriteHeader(status)
 	return json.NewEncoder(ctx.ResponseWriter).Encode(a)
 }
 
 func (ctx *Context) WriteCSV(status int, CRLF bool, separator rune, data [][]string) error {
-	ctx.ResponseWriter.Header().Set("Content-Type", "text/csv")
+	ctx.ResponseWriter.Header()["Content-Type"] = []string{"text/csv"}
 	ctx.WriteHeader(status)
 	w := csv.NewWriter(ctx.ResponseWriter)
 	w.Comma = separator
@@ -75,4 +76,51 @@ func (ctx *Context) Value(key any) any {
 		return v
 	}
 	return ctx.Context.Value(key)
+}
+
+func (ctx *Context) PathInt(name string, base, bitSize int) (int64, error) {
+	return strconv.ParseInt(ctx.PathValue(name), base, bitSize)
+}
+
+func (ctx *Context) PathComplex(name string, bitSize int) (complex128, error) {
+	return strconv.ParseComplex(ctx.PathValue(name), bitSize)
+}
+
+func (ctx *Context) PathBool(name string) (bool, error) {
+	return strconv.ParseBool(ctx.PathValue(name))
+}
+
+func (ctx *Context) PathFloat(name string, bitSize int) (float64, error) {
+	return strconv.ParseFloat(ctx.PathValue(name), bitSize)
+}
+
+func (ctx *Context) PathUint(name string, base, bitSize int) (uint64, error) {
+	return strconv.ParseUint(ctx.PathValue(name), base, bitSize)
+}
+
+func (ctx *Context) FormInt(name string, base, bitSize int) (int64, error) {
+	return strconv.ParseInt(ctx.FormValue(name), base, bitSize)
+}
+
+func (ctx *Context) FormComplex(name string, bitSize int) (complex128, error) {
+	return strconv.ParseComplex(ctx.FormValue(name), bitSize)
+}
+
+func (ctx *Context) FormBool(name string) (bool, error) {
+	return strconv.ParseBool(ctx.FormValue(name))
+}
+
+func (ctx *Context) FormFloat(name string, bitSize int) (float64, error) {
+	return strconv.ParseFloat(ctx.FormValue(name), bitSize)
+}
+
+func (ctx *Context) FormUint(name string, base, bitSize int) (uint64, error) {
+	return strconv.ParseUint(ctx.FormValue(name), base, bitSize)
+}
+
+func (ctx *Context) TrueClientIP() string {
+	if tcip := ctx.Request.Header["True-Client-IP"]; len(tcip) > 0 {
+		return tcip[0]
+	}
+	return ctx.RemoteAddr
 }
