@@ -3,6 +3,8 @@
 HTTX is a thin and simple http multiplexer that is designed as a wrapper layer for `http.ServeMux` to simplify usage of
 middleware, centralized error handling and response writing for a price of a small startup overhead.
 
+**WARNING!** This is an active WIP. Expect breaking changes every patch.
+
 ## Usage
 
 ```go
