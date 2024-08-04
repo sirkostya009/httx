@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"strconv"
 )
@@ -14,6 +15,11 @@ type Context struct {
 	*http.Request
 	context.Context
 	values map[any]any
+}
+
+func (ctx *Context) NoContent(status int) error {
+	ctx.WriteHeader(status)
+	return nil
 }
 
 func (ctx *Context) WriteString(s string) (int, error) {
@@ -27,24 +33,51 @@ func (ctx *Context) Redirect(status int, url string) error {
 }
 
 func (ctx *Context) WriteXML(status int, a any) error {
+	if err := xml.NewEncoder(ctx.ResponseWriter).Encode(a); err != nil {
+		return err
+	}
 	ctx.ResponseWriter.Header()["Content-Type"] = []string{"application/xml"}
 	ctx.WriteHeader(status)
-	return xml.NewEncoder(ctx.ResponseWriter).Encode(a)
+	return nil
 }
 
 func (ctx *Context) WriteJSON(status int, a any) error {
+	if err := json.NewEncoder(ctx.ResponseWriter).Encode(a); err != nil {
+		return err
+	}
 	ctx.ResponseWriter.Header()["Content-Type"] = []string{"application/json"}
 	ctx.WriteHeader(status)
-	return json.NewEncoder(ctx.ResponseWriter).Encode(a)
+	return nil
 }
 
 func (ctx *Context) WriteCSV(status int, CRLF bool, separator rune, data [][]string) error {
-	ctx.ResponseWriter.Header()["Content-Type"] = []string{"text/csv"}
-	ctx.WriteHeader(status)
 	w := csv.NewWriter(ctx.ResponseWriter)
 	w.Comma = separator
 	w.UseCRLF = CRLF
-	return w.WriteAll(data)
+	if err := w.WriteAll(data); err != nil {
+		return err
+	}
+	ctx.ResponseWriter.Header()["Content-Type"] = []string{"text/csv"}
+	ctx.WriteHeader(status)
+	return nil
+}
+
+func (ctx *Context) WriteHTML(status int, html string) error {
+	if _, err := ctx.WriteString(html); err != nil {
+		return err
+	}
+	ctx.ResponseWriter.Header()["Content-Type"] = []string{"application/html"}
+	ctx.WriteHeader(status)
+	return nil
+}
+
+func (ctx *Context) WriteText(status int, s string) error {
+	if _, err := ctx.WriteString(s); err != nil {
+		return err
+	}
+	ctx.ResponseWriter.Header()["Content-Type"] = []string{"text/plain"}
+	ctx.WriteHeader(status)
+	return nil
 }
 
 func (ctx *Context) ReadJSON(a any) error {
@@ -59,6 +92,14 @@ func (ctx *Context) ReadCSV(separator rune) *csv.Reader {
 	r := csv.NewReader(ctx.Body)
 	r.Comma = separator
 	return r
+}
+
+func (ctx *Context) ReadText() (string, error) {
+	b, err := io.ReadAll(ctx.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func (ctx *Context) Set(key, value any) {
@@ -76,6 +117,26 @@ func (ctx *Context) Value(key any) any {
 		return v
 	}
 	return ctx.Context.Value(key)
+}
+
+// WithContext overrides http.Request's WithContext method.
+//
+// Return can be safely ignored.
+func (ctx *Context) WithContext(c context.Context) *Context {
+	ctx.Request = ctx.Request.WithContext(c)
+	ctx.Context = ctx.Request.Context()
+	return ctx
+}
+
+// WithValue A handy shorthand for the context.WithValue method.
+//
+// Meant to solve the same problem as Set, but with more standard
+// and widespread context mechanics.
+//
+// If you have a lot of fields you wish to set this way,
+// consider using Set instead.
+func (ctx *Context) WithValue(key, val any) *Context {
+	return ctx.WithContext(context.WithValue(ctx.Context, key, val))
 }
 
 func (ctx *Context) PathInt(name string, base, bitSize int) (int64, error) {

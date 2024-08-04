@@ -1,7 +1,7 @@
 # HTTp eXtended
 
 HTTX is a thin and simple http multiplexer that is designed as a wrapper layer for `http.ServeMux` to simplify usage of
-middleware, error handling and response writing for a price of a small startup overhead.
+middleware, centralized error handling and response writing for a price of a small startup overhead.
 
 ## Usage
 

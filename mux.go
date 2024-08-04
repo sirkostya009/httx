@@ -12,7 +12,7 @@ func (h HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = h(&ctx)
 }
 
-type ErrorHandler func(Context, error)
+type ErrorHandler func(*Context, error)
 
 type ServeMux struct {
 	*http.ServeMux
@@ -20,7 +20,7 @@ type ServeMux struct {
 	middleware   []HandlerFunc
 }
 
-func DefaultErrorHandler(ctx Context, err error) {
+func DefaultErrorHandler(ctx *Context, err error) {
 	http.Error(ctx.ResponseWriter, err.Error(), http.StatusInternalServerError)
 }
 
@@ -48,13 +48,13 @@ func internalHandle(mux *http.ServeMux, pattern string, handler HandlerFunc, mid
 		//r = r.WithContext(&ctx)
 		for _, mw := range middleware {
 			if err := mw(&ctx); err != nil {
-				errHandler(ctx, err)
+				errHandler(&ctx, err)
 				return
 			}
 		}
 		err := handler(&ctx)
 		if err != nil {
-			errHandler(ctx, err)
+			errHandler(&ctx, err)
 		}
 	})
 }
