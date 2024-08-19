@@ -59,6 +59,6 @@ func internalHandle(mux *http.ServeMux, pattern string, handler HandlerFunc, mid
 	})
 }
 
-func (m *ServeMux) Group(prefix string) Group {
-	return Group{m, prefix, slices.Clone(m.middleware), m.ErrorHandler}
+func (m *ServeMux) Group(prefix string) MuxGroup {
+	return MuxGroup{m, prefix, m.middleware, m.ErrorHandler}
 }
