@@ -44,17 +44,17 @@ func (m *ServeMux) HandleFunc(pattern string, handler HandlerFunc) {
 
 func internalHandle(mux *http.ServeMux, pattern string, handler HandlerFunc, middleware []HandlerFunc, errHandler ErrorHandler) {
 	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-		ctx := Context{w, r, r.Context(), nil}
+		ctx := &Context{w, r, r.Context(), nil}
 		//r = r.WithContext(&ctx)
 		for _, mw := range middleware {
-			if err := mw(&ctx); err != nil {
-				errHandler(&ctx, err)
+			if err := mw(ctx); err != nil {
+				errHandler(ctx, err)
 				return
 			}
 		}
-		err := handler(&ctx)
+		err := handler(ctx)
 		if err != nil {
-			errHandler(&ctx, err)
+			errHandler(ctx, err)
 		}
 	})
 }

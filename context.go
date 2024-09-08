@@ -102,6 +102,9 @@ func (ctx *Context) ReadText() (string, error) {
 	return string(b), nil
 }
 
+// Set sets the internal map with a key and values provided to this method
+//
+// Additionally initializes that map on first invocation.
 func (ctx *Context) Set(key, value any) {
 	// this assumes that users mostly don't use the Set method hence
 	// the values map is not initialized until the first call to Set
@@ -133,8 +136,8 @@ func (ctx *Context) WithContext(c context.Context) *Context {
 // Meant to solve the same problem as Set, but with more standard
 // and widespread context mechanics.
 //
-// If you have a lot of fields you wish to set this way,
-// consider using Set instead.
+// You probably don't need this method at all, and Set will be better
+// for almost every use case.
 func (ctx *Context) WithValue(key, val any) *Context {
 	return ctx.WithContext(context.WithValue(ctx.Context, key, val))
 }
