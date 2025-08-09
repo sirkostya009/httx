@@ -33,7 +33,6 @@ mux.Pre(func(next httx.HandlerFunc) httx.HandlerFunc {
 	}
 })
 
-// Method prefix is available since go ver 1.22
 mux.GET("/hello", func(w http.ResponseWriter, r *http.Request) error {
 	_, err := w.Write([]byte("world!"))
 	return err
