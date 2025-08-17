@@ -21,7 +21,7 @@ You _may_ want to disable redirects if you run into GC issues (but this router w
 
 	// Middleware must be initialized before any route
 	mux.Pre(func(next httx.HandlerFunc) httx.HandlerFunc {
-		return func (w http.ResponseWriter, r *http.Request) (err error) {
+		return func (w http.ResponseWriter, r *http.Request) error {
 			start := time.Now()
 			defer func() { // must defer stuff running after because panics
 				finish := time.Now()
@@ -38,7 +38,10 @@ You _may_ want to disable redirects if you run into GC issues (but this router w
 
 	mux.GET(`/{id:\d+}`, func(w http.ResponseWriter, r *http.Request) error {
 		id := r.PathValue("id") // Go's 1.22 PathValue-compatible
-		res := someDatabaseFunc(r.Context())
+		res, err := someDatabaseFunc(r.Context(), id)
+		if err != nil {
+			return err
+		}
 		return json.NewEncoder(w).Encode(res)
 	})
 
