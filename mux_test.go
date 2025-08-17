@@ -83,9 +83,7 @@ func (rw *readWriter) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-type assertFn func(rw *readWriter)
-
-func assertWithTestServer(t *testing.T, uri string, handler http.Handler, fn assertFn) {
+func assertWithTestServer(t *testing.T, uri string, handler http.Handler, fn func(rw *readWriter)) {
 	s := httptest.NewServer(handler)
 	defer s.Close()
 
@@ -105,7 +103,7 @@ func assertWithTestServer(t *testing.T, uri string, handler http.Handler, fn ass
 	fn(rw)
 }
 
-func catchPanic(testFunc func()) (recv interface{}) {
+func catchPanic(testFunc func()) (recv any) {
 	defer func() {
 		recv = recover()
 	}()

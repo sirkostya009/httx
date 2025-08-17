@@ -116,6 +116,12 @@ func NewMux() *Mux {
 }
 
 func (m *Mux) Group(prefix string) *Group {
+	if prefix == "" {
+		panic("group prefix must not be empty")
+	}
+	if len(prefix) > 1 && strings.HasSuffix(prefix, "/") {
+		panic("group prefix must not be empty")
+	}
 	if !strings.HasPrefix(prefix, "/") {
 		panic(`group prefix must begin with "/"`)
 	}
