@@ -87,31 +87,30 @@ type Mux struct {
 	// and 308 for all other request methods.
 	RedirectTrailingSlash bool
 
-	// If enabled, the router tries to resolve the current request path relative to /,
-	// if no handle is registered for it, using net/url.URL.ResolveReference method.
+	// If enabled, the router tries to find the current request path case insensitively.
 	//
-	// If a handle can be found for the referenced route, a redirect is returned
+	// If a handle can be found case insensitively, a redirect is returned
 	// to corrected location with status code 301 for GET requests and 308 for
 	// all other request methods.
 	//
 	// For example /FOO and /..//Foo could be redirected to /foo.
 	//
 	// RedirectTrailingSlash is independent of this option.
-	RedirectResolvedPath bool
+	RedirectCaseInsensitivePath bool
 }
 
 func NewMux() *Mux {
 	return &Mux{
-		trees:                 make([]*radix.Tree, 10),
-		customMethodsIndex:    map[string]int{},
-		registeredPaths:       map[string][]string{},
-		RedirectTrailingSlash: true,
-		RedirectResolvedPath:  true,
-		OnError:               DefaultErrorHandler,
-		OnMethodNotAllowed:    DefaultOnMethodNotAllowed,
-		OnNotFound:            DefaultOnNotFound,
-		OnPanic:               DefaultOnPanic,
-		GlobalOPTIONS:         func(w http.ResponseWriter, r *http.Request) {},
+		trees:                       make([]*radix.Tree, 10),
+		customMethodsIndex:          map[string]int{},
+		registeredPaths:             map[string][]string{},
+		RedirectTrailingSlash:       true,
+		RedirectCaseInsensitivePath: true,
+		OnError:                     DefaultErrorHandler,
+		OnMethodNotAllowed:          DefaultOnMethodNotAllowed,
+		OnNotFound:                  DefaultOnNotFound,
+		OnPanic:                     DefaultOnPanic,
+		GlobalOPTIONS:               func(w http.ResponseWriter, r *http.Request) {},
 	}
 }
 
@@ -251,8 +250,6 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.OnNotFound(w, r)
 }
 
-var base, _ = url.Parse("/")
-
 func (m *Mux) tryRedirect(w http.ResponseWriter, r *http.Request, tree *radix.Tree, tsr bool, method, path string) bool {
 	// Moved Permanently, request with GET method
 	code := http.StatusMovedPermanently
@@ -283,17 +280,11 @@ func (m *Mux) tryRedirect(w http.ResponseWriter, r *http.Request, tree *radix.Tr
 	}
 
 	// Try to fix the request path
-	if m.RedirectResolvedPath {
+	if m.RedirectCaseInsensitivePath {
 		uri := make([]byte, 0, len(r.RequestURI)+1)
-		resolved := base.ResolveReference(r.URL)
-		found := tree.FindCaseInsensitivePath(
-			strings.TrimSuffix(resolved.Path, "."),
-			m.RedirectTrailingSlash,
-			&uri,
-		)
 
-		if found {
-			if len(resolved.RawQuery) > 0 {
+		if tree.FindCaseInsensitivePath(r.URL.Path, m.RedirectTrailingSlash, &uri) {
+			if len(r.URL.RawQuery) > 0 {
 				uri = append(uri, '?')
 				uri = append(uri, r.URL.RawQuery...)
 			}
@@ -329,15 +320,18 @@ func (m *Mux) Merge(prefix string, handler http.Handler) {
 			}
 		}
 	default:
-		if !strings.HasSuffix(prefix, "*") {
-			panic("non-Mux merges must end with *")
-		}
-		noStar := prefix[:len(prefix)-1]
+		// if !strings.HasSuffix(prefix, "*") {
+		// 	panic("non-Mux merges must end with *")
+		// }
+		lastSlash := strings.LastIndex(prefix, "/")
 		notFound := m.OnNotFound
 		m.Handle(MethodWild, prefix, func(w http.ResponseWriter, r *http.Request) error {
 			// the exact copy of code from http.StripPrefix
-			p := strings.TrimPrefix(r.URL.Path, noStar)
-			rp := strings.TrimPrefix(r.URL.RawPath, noStar)
+			p := r.URL.Path[lastSlash:]
+			rp := ""
+			if r.URL.RawPath != "" {
+				rp = r.URL.RawPath[lastSlash:]
+			}
 			if len(p) < len(r.URL.Path) && (r.URL.RawPath == "" || len(rp) < len(r.URL.RawPath)) {
 				r2 := &http.Request{}
 				*r2 = *r
@@ -353,6 +347,14 @@ func (m *Mux) Merge(prefix string, handler http.Handler) {
 		})
 	}
 }
+
+// func (m *Mux) FS(path string, f fs.FS) {
+// 	m.Merge(path, http.FileServerFS(f))
+// }
+
+// func (m *Mux) FileSystem(path string, f http.FileSystem) {
+// 	m.Merge(path, http.FileServer(f))
+// }
 
 func (m *Mux) Handle(method, path string, handler HandlerFunc) {
 	switch {

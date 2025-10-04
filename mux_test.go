@@ -448,6 +448,7 @@ func TestRouterOPTIONS(t *testing.T) {
 	router.POST("/path", handlerFunc)
 
 	var checkHandling = func(path, expectedAllowed string, expectedStatusCode int) {
+		t.Helper()
 		req := httptest.NewRequest(http.MethodOptions, path, nil)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -522,6 +523,7 @@ func TestRouterNotAllowed(t *testing.T) {
 	router.POST("/path", handlerFunc)
 
 	var checkHandling = func(path, expectedAllowed string, expectedStatusCode int) {
+		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)

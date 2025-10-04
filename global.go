@@ -72,3 +72,11 @@ func ANY(path string, handler HandlerFunc) {
 func Merge(path string, handler http.Handler) {
 	DefaultServeMux.Merge(path, handler)
 }
+
+// func FS(path string, f fs.FS) {
+// 	DefaultServeMux.FS(path, f)
+// }
+
+// func FileSystem(path string, f http.FileSystem) {
+// 	DefaultServeMux.FileSystem(path, f)
+// }

@@ -8,7 +8,9 @@ Thus, this multiplexer has optional and regex path params unlike the standard on
 
 Inherits 0 allocation routing, except for redirects. This is a deliberate choice attempting to strip away any external deps from codebase.
 
-Additionally, RedirectResolvedPath (RedirectFixedPath in `fasthttp/router`) works differently by utilizing `url.ResolveReference` method.
+Additionally, RedirectCaseInsensitivePath (RedirectFixedPath in `fasthttp/router`) works differently by only matching case insensitive paths, with path resolution done by `http.Server`.
+
+If you're not using `http.Server` and need path resolution, I suggest you utilize `ResolvePath` mux wrapper function from [appendix section](#appendix).
 
 You _may_ want to disable redirects if you run into GC issues (but this router would probably be the least of your allocation problems anyway).
 
@@ -58,3 +60,17 @@ _ = http.ListenAndServe(":8080", mux)
 ## License
 
 The original BSD 3-clause license from [fasthttp/router](https://github.com/fasthttp/router/blob/master/LICENSE). See [LICENSE](LICENSE).
+
+## Appendix
+
+### `ResolvePath` function:
+```go
+var base, _ = url.Parse("/")
+
+func ResolvePath(h http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.URL = base.ResolveReference(r.URL)
+		h.ServeHTTP(w, r)
+	}
+}
+```
