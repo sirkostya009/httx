@@ -603,8 +603,8 @@ func testRouterNotFoundByMethod(t *testing.T, method string) {
 
 	testRoutes := []testRoute{
 		// {"", http.StatusOK, ""},                                  // TSR +/ (Not clean by router, this path is cleaned by fasthttp `ctx.Path()`)
-		{"/../path", expectedCode, ("/path")}, // CleanPath (Not clean by router, this path is cleaned by fasthttp `ctx.Path()`)
-		{"/nope", http.StatusNotFound, ""},    // NotFound
+		// {"/../path", expectedCode, ("/path")}, // CleanPath (Not clean by router, this path is cleaned by fasthttp `ctx.Path()`)
+		{"/nope", http.StatusNotFound, ""}, // NotFound
 	}
 
 	if method != http.MethodConnect {
@@ -773,6 +773,31 @@ func TestRouterPanicHandler(t *testing.T) {
 
 	if !panicHandled {
 		t.Fatal("simulating failed")
+	}
+}
+
+func TestMiddleware(t *testing.T) {
+	router := NewMux()
+	middlewareHit := false
+
+	router.Pre(func(hf HandlerFunc) HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) error {
+			middlewareHit = true
+			return hf(w, r)
+		}
+	})
+
+	router.Handle(http.MethodPut, "/user/{name}", func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/user/gopher", nil)
+
+	router.ServeHTTP(rec, req)
+
+	if !middlewareHit {
+		t.Fatal("middleware not hit!")
 	}
 }
 

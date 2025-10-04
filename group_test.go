@@ -203,3 +203,72 @@ func TestGroup_shortcutsAndHandle(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupMiddleware(t *testing.T) {
+	router := NewMux()
+	rootMiddleware := false
+
+	router.Pre(func(hf HandlerFunc) HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) error {
+			rootMiddleware = true
+			return hf(w, r)
+		}
+	})
+
+	groupA := router.Group("/a")
+	aMiddleware := false
+
+	groupA.Pre(func(hf HandlerFunc) HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) error {
+			aMiddleware = true
+			return hf(w, r)
+		}
+	})
+
+	groupA.Handle(http.MethodPut, "/user/{name}", func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	})
+
+	groupB := router.Group("/b")
+	bMiddleware := false
+
+	groupB.Pre(func(hf HandlerFunc) HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) error {
+			bMiddleware = true
+			return hf(w, r)
+		}
+	})
+
+	groupB.Handle(http.MethodPut, "/user/{name}", func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/a/user/gopher", nil)
+
+	router.ServeHTTP(rec, req)
+
+	if !rootMiddleware {
+		t.Error("root middleware not hit!")
+	}
+
+	if !aMiddleware {
+		t.Error("a middleware not hit!")
+	}
+
+	// reset rootMiddleware cause groupb must inherit it too
+	rootMiddleware = false
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/b/user/gopher", nil)
+
+	router.ServeHTTP(rec, req)
+
+	if !rootMiddleware {
+		t.Error("root middleware not hit!")
+	}
+
+	if !bMiddleware {
+		t.Error("b middleware not hit!")
+	}
+}

@@ -2,12 +2,14 @@ package httx
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 )
 
 type Group struct {
 	prefix string
 	m      *Mux
+	mw     []func(HandlerFunc) HandlerFunc
 }
 
 func (g *Group) Group(prefix string) *Group {
@@ -20,7 +22,12 @@ func (g *Group) Group(prefix string) *Group {
 	if !strings.HasPrefix(prefix, "/") {
 		panic(`group prefix must begin with "/"`)
 	}
-	return &Group{g.prefix + prefix, g.m}
+	return &Group{g.prefix + prefix, g.m, slices.Clip(g.mw)}
+}
+
+func (g *Group) Pre(mw ...func(HandlerFunc) HandlerFunc) {
+	// clipping ensures we don't modify the original mw array in Merge
+	g.mw = slices.Clip(append(g.mw, mw...))
 }
 
 func (g *Group) Handle(method, path string, handler HandlerFunc) {
@@ -30,7 +37,10 @@ func (g *Group) Handle(method, path string, handler HandlerFunc) {
 	if path == "" {
 		panic("path must not be empty")
 	}
+	temp := g.m.mw
+	g.m.mw = g.mw
 	g.m.Handle(method, g.prefix+path, handler)
+	g.m.mw = temp
 }
 
 func (g *Group) GET(path string, handler HandlerFunc) {
@@ -74,5 +84,8 @@ func (g *Group) ANY(path string, handler HandlerFunc) {
 }
 
 func (g *Group) Merge(path string, handler http.Handler) {
+	temp := g.m.mw
+	g.m.mw = g.mw
 	g.m.Merge(g.prefix+path, handler)
+	g.m.mw = temp
 }

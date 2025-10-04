@@ -124,7 +124,7 @@ func (m *Mux) Group(prefix string) *Group {
 	if !strings.HasPrefix(prefix, "/") {
 		panic(`group prefix must begin with "/"`)
 	}
-	return &Group{prefix, m}
+	return &Group{prefix, m, m.mw}
 }
 
 func (m *Mux) Pre(mw ...func(HandlerFunc) HandlerFunc) {
