@@ -1,6 +1,7 @@
 package httx
 
 import (
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -299,6 +300,8 @@ func (m *Mux) tryRedirect(w http.ResponseWriter, r *http.Request, tree *radix.Tr
 	return false
 }
 
+type fswrap http.Handler
+
 func (m *Mux) Merge(prefix string, handler http.Handler) {
 	switch h := handler.(type) {
 	case *Mux:
@@ -319,6 +322,25 @@ func (m *Mux) Merge(prefix string, handler http.Handler) {
 				}
 			}
 		}
+	case fswrap:
+		if !strings.HasSuffix(prefix, "{filepath:*}") {
+			panic("call to Mux.FileSystem must end with {filepath:*}")
+		}
+		m.Handle(MethodWild, prefix, func(w http.ResponseWriter, r *http.Request) (err error) {
+			// the exact copy of code from http.StripPrefix
+			p := r.PathValue("filepath")
+			rp := p
+			if len(p) < len(r.URL.Path) && (r.URL.RawPath == "" || len(rp) < len(r.URL.RawPath)) {
+				r2 := &http.Request{}
+				*r2 = *r
+				r2.URL = &url.URL{}
+				*r2.URL = *r.URL
+				r2.URL.Path = p
+				r2.URL.RawPath = rp
+				h.ServeHTTP(w, r2)
+			}
+			return nil
+		})
 	default:
 		// if !strings.HasSuffix(prefix, "*") {
 		// 	panic("non-Mux merges must end with *")
@@ -348,13 +370,29 @@ func (m *Mux) Merge(prefix string, handler http.Handler) {
 	}
 }
 
-// func (m *Mux) FS(path string, f fs.FS) {
-// 	m.Merge(path, http.FileServerFS(f))
-// }
+func StripPrefix(prefix string, r *http.Request) (*http.Request, bool) {
+	p := strings.TrimPrefix(r.URL.Path, prefix)
+	rp := strings.TrimPrefix(r.URL.RawPath, prefix)
+	if len(p) < len(r.URL.Path) && (r.URL.RawPath == "" || len(rp) < len(r.URL.RawPath)) {
+		r2 := &http.Request{}
+		*r2 = *r
+		r2.URL = &url.URL{}
+		*r2.URL = *r.URL
+		r2.URL.Path = p
+		r2.URL.RawPath = rp
+		return r2, true
+	} else {
+		return r, false
+	}
+}
 
-// func (m *Mux) FileSystem(path string, f http.FileSystem) {
-// 	m.Merge(path, http.FileServer(f))
-// }
+func (m *Mux) FS(path string, f fs.FS) {
+	m.FileSystem(path, http.FS(f))
+}
+
+func (m *Mux) FileSystem(path string, f http.FileSystem) {
+	m.Merge(path, fswrap(http.FileServer(f)))
+}
 
 func (m *Mux) Handle(method, path string, handler HandlerFunc) {
 	switch {

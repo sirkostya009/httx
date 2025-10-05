@@ -1,6 +1,7 @@
 package httx
 
 import (
+	"io/fs"
 	"net/http"
 	"slices"
 	"strings"
@@ -88,4 +89,12 @@ func (g *Group) Merge(path string, handler http.Handler) {
 	g.m.mw = g.mw
 	g.m.Merge(g.prefix+path, handler)
 	g.m.mw = temp
+}
+
+func (g *Group) FS(path string, f fs.FS) {
+	g.FileSystem(path, http.FS(f))
+}
+
+func (g *Group) FileSystem(path string, f http.FileSystem) {
+	g.Merge(path, fswrap(http.FileServer(f)))
 }

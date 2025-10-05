@@ -1,8 +1,10 @@
 package httx
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -270,5 +272,47 @@ func TestGroupMiddleware(t *testing.T) {
 
 	if !bMiddleware {
 		t.Error("b middleware not hit!")
+	}
+}
+
+func TestGroupFSTemp(t *testing.T) {
+	r := NewMux()
+	group := r.Group("/group")
+
+	groupMiddleware := false
+	group.Pre(func(hf HandlerFunc) HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) error {
+			groupMiddleware =true
+			return nil
+		}
+	})
+
+	root := os.TempDir()
+
+	fs := os.DirFS(root)
+
+	recv := catchPanic(func() {
+		group.FS("/noFilepath", fs)
+	})
+	if recv == nil {
+		t.Fatal("registering path not ending with '{filepath:*}' did not panic")
+	}
+	body := []byte("fake ico")
+	os.WriteFile(root+"/favicon.ico", body, 0644)
+
+	group.FS("/static/{filepath:*}", fs)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/group/static/favicon.ico", nil)
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Unexpected status code %d. Expected %d", rec.Code, http.StatusOK)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), body) {
+		t.Fatalf("Unexpected body %q. Expected %q", rec.Body.String(), string(body))
+	}
+	if !groupMiddleware {
+		t.Fatal("middleware was not hit!")
 	}
 }

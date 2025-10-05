@@ -6,23 +6,16 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"slices"
 )
-
-type readWriter struct {
-	net.Conn
-	r bytes.Buffer
-	w bytes.Buffer
-}
 
 var httpMethods = []string{
 	http.MethodGet,
@@ -49,58 +42,6 @@ func randomHTTPMethod() string {
 	}
 
 	return method
-}
-
-var zeroTCPAddr = &net.TCPAddr{
-	IP: net.IPv4zero,
-}
-
-func (rw *readWriter) Close() error {
-	return nil
-}
-
-func (rw *readWriter) Read(b []byte) (int, error) {
-	return rw.r.Read(b)
-}
-
-func (rw *readWriter) Write(b []byte) (int, error) {
-	return rw.w.Write(b)
-}
-
-func (rw *readWriter) RemoteAddr() net.Addr {
-	return zeroTCPAddr
-}
-
-func (rw *readWriter) LocalAddr() net.Addr {
-	return zeroTCPAddr
-}
-
-func (rw *readWriter) SetReadDeadline(t time.Time) error {
-	return nil
-}
-
-func (rw *readWriter) SetWriteDeadline(t time.Time) error {
-	return nil
-}
-
-func assertWithTestServer(t *testing.T, uri string, handler http.Handler, fn func(rw *readWriter)) {
-	s := httptest.NewServer(handler)
-	defer s.Close()
-
-	rw := &readWriter{}
-	ch := make(chan error)
-
-	rw.r.WriteString(uri)
-	select {
-	case err := <-ch:
-		if err != nil {
-			t.Fatalf("return error %s", err)
-		}
-	case <-time.After(500 * time.Millisecond):
-		t.Fatalf("timeout")
-	}
-
-	fn(rw)
 }
 
 func catchPanic(testFunc func()) (recv any) {
@@ -949,104 +890,64 @@ func TestMiddleware(t *testing.T) {
 // 	}
 // }
 
-// func TestRouterServeFiles(t *testing.T) {
-// 	r := NewMux()
+func TestRouterFSEmbed(t *testing.T) {
+	r := NewMux()
 
-// 	recv := catchPanic(func() {
-// 		r.ServeFiles("/noFilepath", os.TempDir())
-// 	})
-// 	if recv == nil {
-// 		t.Fatal("registering path not ending with '{filepath:*}' did not panic")
-// 	}
+	recv := catchPanic(func() {
+		r.FS("/noFilepath", fsTestFilesystem)
+	})
+	if recv == nil {
+		t.Fatal("registering path not ending with '{filepath:*}' did not panic")
+	}
 
-// 	body := []byte("fake ico")
-// 	if err := os.WriteFile(os.TempDir()+"/favicon.ico", body, 0644); err != nil {
-// 		t.Fatal(err)
-// 	}
+	body, err := os.ReadFile("LICENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	r.ServeFiles("/{filepath:*}", os.TempDir())
+	r.FS("/{filepath:*}", fsTestFilesystem)
 
-// 	assertWithTestServer(t, "GET /favicon.ico HTTP/1.1\r\n\r\n", r, func(rw *readWriter) {
-// 		br := bufio.NewReader(&rw.w)
-// 		var resp http.Response
-// 		if err := resp.Read(br); err != nil {
-// 			t.Fatalf("Unexpected error when reading response: %s", err)
-// 		}
-// 		if resp.Header.StatusCode() != 200 {
-// 			t.Fatalf("Unexpected status code %d. Expected %d", resp.Header.StatusCode(), 200)
-// 		}
-// 		if !bytes.Equal(resp.Body(), body) {
-// 			t.Fatalf("Unexpected body %q. Expected %q", resp.Body(), string(body))
-// 		}
-// 	})
-// }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/LICENSE", nil)
+	r.ServeHTTP(rec, req)
 
-// func TestRouterServeFS(t *testing.T) {
-// 	r := NewMux()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Unexpected status code %d. Expected %d", rec.Code, http.StatusOK)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), body) {
+		t.Fatalf("Unexpected body %q. Expected %q", rec.Body.String(), string(body))
+	}
+}
 
-// 	recv := catchPanic(func() {
-// 		r.ServeFS("/noFilepath", fsTestFilesystem)
-// 	})
-// 	if recv == nil {
-// 		t.Fatal("registering path not ending with '{filepath:*}' did not panic")
-// 	}
+func TestRouterFSTemp(t *testing.T) {
+	r := NewMux()
 
-// 	body, err := os.ReadFile("LICENSE")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+	root := os.TempDir()
 
-// 	r.ServeFS("/{filepath:*}", fsTestFilesystem)
+	fs := os.DirFS(root)
 
-// 	assertWithTestServer(t, "GET /LICENSE HTTP/1.1\r\n\r\n", r.Handler, func(rw *readWriter) {
-// 		br := bufio.NewReader(&rw.w)
-// 		var resp http.Response
-// 		if err := resp.Read(br); err != nil {
-// 			t.Fatalf("Unexpected error when reading response: %s", err)
-// 		}
-// 		if resp.Header.StatusCode() != 200 {
-// 			t.Fatalf("Unexpected status code %d. Expected %d", resp.Header.StatusCode(), 200)
-// 		}
-// 		if !bytes.Equal(resp.Body(), body) {
-// 			t.Fatalf("Unexpected body %q. Expected %q", resp.Body(), string(body))
-// 		}
-// 	})
-// }
+	recv := catchPanic(func() {
+		r.FS("/noFilepath", fs)
+	})
+	if recv == nil {
+		t.Fatal("registering path not ending with '{filepath:*}' did not panic")
+	}
+	body := []byte("fake ico")
+	os.WriteFile(root+"/favicon.ico", body, 0644)
 
-// func TestRouterServeFilesCustom(t *testing.T) {
-// 	r := NewMux()
+	r.FS("/temp/{filepath:*}", fs)
 
-// 	root := os.TempDir()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/temp/favicon.ico?q=0", nil)
+	r.ServeHTTP(rec, req)
 
-// 	fs := &http.FS{
-// 		Root: root,
-// 	}
-
-// 	recv := catchPanic(func() {
-// 		r.ServeFilesCustom("/noFilepath", fs)
-// 	})
-// 	if recv == nil {
-// 		t.Fatal("registering path not ending with '{filepath:*}' did not panic")
-// 	}
-// 	body := []byte("fake ico")
-// 	ioutil.WriteFile(root+"/favicon.ico", body, 0644)
-
-// 	r.ServeFilesCustom("/{filepath:*}", fs)
-
-// 	assertWithTestServer(t, "GET /favicon.ico HTTP/1.1\r\n\r\n", r.Handler, func(rw *readWriter) {
-// 		br := bufio.NewReader(&rw.w)
-// 		var resp http.Response
-// 		if err := resp.Read(br); err != nil {
-// 			t.Fatalf("Unexpected error when reading response: %s", err)
-// 		}
-// 		if resp.Header.StatusCode() != 200 {
-// 			t.Fatalf("Unexpected status code %d. Expected %d", resp.Header.StatusCode(), 200)
-// 		}
-// 		if !bytes.Equal(resp.Body(), body) {
-// 			t.Fatalf("Unexpected body %q. Expected %q", resp.Body(), string(body))
-// 		}
-// 	})
-// }
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Unexpected status code %d. Expected %d", rec.Code, http.StatusOK)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), body) {
+		t.Fatalf("Unexpected body %q. Expected %q", rec.Body.String(), string(body))
+	}
+}
 
 func TestRouterList(t *testing.T) {
 	expected := map[string][]string{
