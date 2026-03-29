@@ -33,10 +33,10 @@ func assertGroup(t *testing.T, gs ...routerGrouper) {
 			if v1.Pointer() == v2.Pointer() {
 				t.Errorf("[%d] equal pointers: %p == %p", i, g, g2)
 			}
-		} else { // group -> subgroup
-			// if v1.Pointer() != v2.Pointer() {
-			// 	t.Errorf("[%d] mismatch pointers: %p != %p", i, g, g2)
-			// }
+		// } else {
+		// group -> subgroup
+		// if v1.Pointer() != v2.Pointer() {
+		// 	t.Errorf("[%d] mismatch pointers: %p != %p", i, g, g2)
 		}
 
 		if err := catchPanic(func() { g.Group("v999") }); err == nil {
@@ -298,7 +298,9 @@ func TestGroupFSTemp(t *testing.T) {
 		t.Fatal("registering path not ending with '{filepath:*}' did not panic")
 	}
 	body := []byte("fake ico")
-	os.WriteFile(root+"/favicon.ico", body, 0644)
+	if err := os.WriteFile(root+"/favicon.ico", body, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	group.FS("/static/{filepath:*}", fs)
 

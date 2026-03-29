@@ -287,7 +287,7 @@ func TestRouterChaining(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router1.ServeHTTP(rec, req)
 
-	if !(rec.Result().StatusCode == http.StatusOK && fooHit) {
+	if rec.Result().StatusCode != http.StatusOK || !fooHit {
 		t.Errorf("Regular routing failed with router chaining.")
 		t.FailNow()
 	}
@@ -296,7 +296,7 @@ func TestRouterChaining(t *testing.T) {
 	rec = httptest.NewRecorder()
 	router1.ServeHTTP(rec, req)
 
-	if !(rec.Result().StatusCode == http.StatusOK && barHit) {
+	if rec.Result().StatusCode != http.StatusOK || !barHit {
 		t.Errorf("Chained routing failed with router chaining.")
 		t.FailNow()
 	}
@@ -305,7 +305,7 @@ func TestRouterChaining(t *testing.T) {
 	rec = httptest.NewRecorder()
 	router1.ServeHTTP(rec, req)
 
-	if !(rec.Result().StatusCode == http.StatusNotFound) {
+	if rec.Result().StatusCode != http.StatusNotFound {
 		t.Errorf("NotFound behavior failed with router chaining.")
 		t.FailNow()
 	}
@@ -394,7 +394,7 @@ func TestRouterOPTIONS(t *testing.T) {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 
-		if !(rec.Result().StatusCode == expectedStatusCode) {
+		if rec.Result().StatusCode != expectedStatusCode {
 			t.Errorf("OPTIONS handling failed: Code=%d, Header=%v", rec.Result().StatusCode, rec.Result().Header)
 		} else if allow := (rec.Result().Header.Values("Allow")); strings.Join(allow, ", ") != expectedAllowed {
 			t.Error("unexpected Allow header value:", allow)
@@ -411,7 +411,7 @@ func TestRouterOPTIONS(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/doesnotexist", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	if !(rec.Result().StatusCode == http.StatusNotFound) {
+	if rec.Result().StatusCode != http.StatusNotFound {
 		t.Errorf("OPTIONS handling failed: Code=%d, Header=%v", rec.Result().StatusCode, rec.Result().Header)
 	}
 
@@ -469,7 +469,7 @@ func TestRouterNotAllowed(t *testing.T) {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 
-		if !(rec.Result().StatusCode == expectedStatusCode) {
+		if rec.Result().StatusCode != expectedStatusCode {
 			t.Errorf("NotAllowed handling failed:: Code=%d, Header=%v", rec.Result().StatusCode, rec.Result().Header)
 		} else if allow := (rec.Result().Header.Values("Allow")); strings.Join(allow, ", ") != expectedAllowed {
 			t.Error("unexpected Allow header value:", allow)
@@ -490,7 +490,7 @@ func TestRouterNotAllowed(t *testing.T) {
 	responseText := "custom method"
 	router.OnMethodNotAllowed = func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
-		w.Write([]byte(responseText))
+		_, _ = w.Write([]byte(responseText))
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/path", nil)
@@ -498,7 +498,7 @@ func TestRouterNotAllowed(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	b, _ := io.ReadAll(rec.Result().Body)
-	if got := string(b); !(got == responseText) {
+	if got := string(b); got != responseText {
 		t.Errorf("unexpected response got %q want %q", got, responseText)
 	}
 	if rec.Result().StatusCode != http.StatusTeapot {
@@ -573,7 +573,7 @@ func testRouterNotFoundByMethod(t *testing.T, method string) {
 		statusCode := rec.Result().StatusCode
 		location := (rec.Result().Header.Get("Location"))
 
-		if !(statusCode == tr.code && (statusCode == http.StatusNotFound || location == tr.location)) {
+		if statusCode != tr.code || (statusCode != http.StatusNotFound && location != tr.location) {
 			fn := t.Errorf
 			msg := "NotFound handling route '%s' failed: Method=%s, ReqMethod=%s, Code=%d, ExpectedCode=%d, Header=%v"
 
@@ -599,7 +599,7 @@ func testRouterNotFoundByMethod(t *testing.T, method string) {
 	req := httptest.NewRequest(reqMethod, "/nope", nil)
 	router.ServeHTTP(rec, req)
 
-	if !(rec.Result().StatusCode == http.StatusNotFound && notFound == true) {
+	if rec.Result().StatusCode != http.StatusNotFound || !notFound {
 		t.Errorf(
 			"Custom NotFound handling failed: Method=%s, ReqMethod=%s, Code=%d, Header=%v",
 			method, reqMethod, rec.Result().StatusCode, rec.Result().Header,
@@ -623,7 +623,7 @@ func TestRouterNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPatch, "/path/?key=val", nil)
 	req.Host = host
 	router.ServeHTTP(rec, req)
-	if !(rec.Result().StatusCode == http.StatusPermanentRedirect && (rec.Result().Header.Get("Location")) == ("/path?key=val")) {
+	if rec.Result().StatusCode != http.StatusPermanentRedirect || rec.Result().Header.Get("Location") != "/path?key=val" {
 		t.Errorf("Custom NotFound handler failed: Code=%d, Header=%v", rec.Result().StatusCode, rec.Result().Header)
 	}
 
@@ -634,7 +634,7 @@ func TestRouterNotFound(t *testing.T) {
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPatch, "/", nil)
 	router.ServeHTTP(rec, req)
-	if !(rec.Result().StatusCode == http.StatusNotFound) {
+	if rec.Result().StatusCode != http.StatusNotFound {
 		t.Errorf("NotFound handling route / failed: Code=%d", rec.Result().StatusCode)
 	}
 }
@@ -933,7 +933,9 @@ func TestRouterFSTemp(t *testing.T) {
 		t.Fatal("registering path not ending with '{filepath:*}' did not panic")
 	}
 	body := []byte("fake ico")
-	os.WriteFile(root+"/favicon.ico", body, 0644)
+	if err := os.WriteFile(root+"/favicon.ico", body, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	r.FS("/temp/{filepath:*}", fs)
 

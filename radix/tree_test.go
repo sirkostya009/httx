@@ -11,10 +11,10 @@ import (
 
 func generateHandler() http.Handler {
 	hex := make([]byte, 10)
-	rand.Read(hex)
+	_, _ = rand.Read(hex)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(hex)
+		_, _ = w.Write(hex)
 	})
 }
 
