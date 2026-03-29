@@ -20,7 +20,7 @@ You _may_ want to disable redirects if you run into GC issues (but this router w
 	}
 
 	// Middleware must be initialized before any route
-	mux.Pre(func(next httx.HandlerFunc) httx.HandlerFunc {
+	mux.Use(func(next httx.HandlerFunc) httx.HandlerFunc {
 		return func (w http.ResponseWriter, r *http.Request) error {
 			start := time.Now()
 			defer func() { // must defer stuff running after because panics

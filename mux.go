@@ -128,7 +128,7 @@ func (m *Mux) Group(prefix string) *Group {
 	return &Group{prefix, m, m.mw}
 }
 
-func (m *Mux) Pre(mw ...func(HandlerFunc) HandlerFunc) {
+func (m *Mux) Use(mw ...func(HandlerFunc) HandlerFunc) {
 	// clipping ensures we don't modify the original mw array in Merge
 	m.mw = slices.Clip(append(m.mw, mw...))
 }

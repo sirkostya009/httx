@@ -721,7 +721,7 @@ func TestMiddleware(t *testing.T) {
 	router := NewMux()
 	middlewareHit := false
 
-	router.Pre(func(hf HandlerFunc) HandlerFunc {
+	router.Use(func(hf HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			middlewareHit = true
 			return hf(w, r)

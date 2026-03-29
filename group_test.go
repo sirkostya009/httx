@@ -210,7 +210,7 @@ func TestGroupMiddleware(t *testing.T) {
 	router := NewMux()
 	rootMiddleware := false
 
-	router.Pre(func(hf HandlerFunc) HandlerFunc {
+	router.Use(func(hf HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			rootMiddleware = true
 			return hf(w, r)
@@ -220,7 +220,7 @@ func TestGroupMiddleware(t *testing.T) {
 	groupA := router.Group("/a")
 	aMiddleware := false
 
-	groupA.Pre(func(hf HandlerFunc) HandlerFunc {
+	groupA.Use(func(hf HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			aMiddleware = true
 			return hf(w, r)
@@ -234,7 +234,7 @@ func TestGroupMiddleware(t *testing.T) {
 	groupB := router.Group("/b")
 	bMiddleware := false
 
-	groupB.Pre(func(hf HandlerFunc) HandlerFunc {
+	groupB.Use(func(hf HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			bMiddleware = true
 			return hf(w, r)
@@ -280,9 +280,9 @@ func TestGroupFSTemp(t *testing.T) {
 	group := r.Group("/group")
 
 	groupMiddleware := false
-	group.Pre(func(hf HandlerFunc) HandlerFunc {
+	group.Use(func(hf HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
-			groupMiddleware =true
+			groupMiddleware = true
 			return nil
 		}
 	})

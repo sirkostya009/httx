@@ -24,7 +24,7 @@ mux.OnError = func(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // Middleware must be initialized before any route
-mux.Pre(func(next httx.HandlerFunc) httx.HandlerFunc {
+mux.Use(func(next httx.HandlerFunc) httx.HandlerFunc {
 	return func (w http.ResponseWriter, r *http.Request) error {
 		start := time.Now()
 		defer func() { // must defer stuff running after because panics

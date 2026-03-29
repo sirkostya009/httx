@@ -9,7 +9,7 @@ import (
 var DefaultServeMux = NewMux()
 
 func init() {
-	DefaultServeMux.Pre(DefaultSlogMiddleware())
+	DefaultServeMux.Use(DefaultSlogMiddleware())
 }
 
 func DefaultSlogMiddleware() func(HandlerFunc) HandlerFunc {
