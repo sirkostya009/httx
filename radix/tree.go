@@ -65,13 +65,15 @@ func (t *Tree) Add(path string, handler http.Handler) {
 // Get returns the handle registered with the given path (key). The values of
 // param/wildcard are saved as PathValue.
 //
+// unmatchedParam is the key of a regex-validated parameter that was not matched.
+//
 // If no handle can be found, a TSR (trailing slash redirect) recommendation is
 // made if a handle exists with (or without) an extra trailing slash for the
 // given path.
-func (t *Tree) Get(path string, req *http.Request) (http.Handler, bool) {
+func (t *Tree) Get(path string, req *http.Request) (handler http.Handler, unmatchedParam string, tsr bool) {
 	if len(path) > len(t.root.path) {
 		if path[:len(t.root.path)] != t.root.path {
-			return nil, false
+			return nil, "", false
 		}
 
 		path = path[len(t.root.path):]
@@ -80,19 +82,19 @@ func (t *Tree) Get(path string, req *http.Request) (http.Handler, bool) {
 	} else if path == t.root.path {
 		switch {
 		case t.root.tsr:
-			return nil, true
+			return nil, "", true
 		case t.root.handler != nil:
-			return t.root.handler, false
+			return t.root.handler, "", false
 		case t.root.wildcard != nil:
 			if req != nil {
 				req.SetPathValue(t.root.wildcard.paramKey, "")
 			}
 
-			return t.root.wildcard.handler, false
+			return t.root.wildcard.handler, "", false
 		}
 	}
 
-	return nil, false
+	return nil, "", false
 }
 
 // FindCaseInsensitivePath makes a case-insensitive lookup of the given path

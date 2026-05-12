@@ -7,10 +7,31 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/sirkostya009/httx/radix"
 )
+
+// redirectBox holds both the uri scratch buffer and the [1]string backing
+// array that http.Header values point to. Pooling both lets a redirect run
+// with zero heap allocations.
+//
+// CAVEAT: w.Header()["Location"] = box.loc[:1] makes the map reference live
+// pool memory. After WriteHeader the net/http response writer has serialized
+// the bytes onto the wire, so the next Get/reuse is safe in production.
+// Tests that hold an httptest.ResponseRecorder and inspect Location across
+// multiple redirects on the same recorder will see Location mutate.
+type redirectBox struct {
+	buf []byte
+	loc [1]string
+}
+
+var redirectURIPool = sync.Pool{
+	New: func() any {
+		return &redirectBox{buf: make([]byte, 0, 128)}
+	},
+}
 
 func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error("error", "method", r.Method, "uri", r.RequestURI, "error", err)
@@ -49,13 +70,14 @@ type Mux struct {
 	// cannot be routed.
 	//
 	// If nil, OnNotFound is called instead.
-	///
-	// The "Allow" header with allowed request methods is set before this handler
-	// is called.
+	//
+	// Allow header is set before this handler is called.
 	OnMethodNotAllowed func(http.ResponseWriter, *http.Request)
 
 	// Configurable http.Handler which is called when no matching route is
-	// found. Cannot be nil.
+	// found.
+	//
+	// Cannot be nil.
 	OnNotFound func(http.ResponseWriter, *http.Request)
 
 	// Function to handle panics recovered from http handlers.
@@ -65,6 +87,12 @@ type Mux struct {
 	// The handler can be used to keep your server from crashing because of
 	// unrecovered panics.
 	OnPanic func(http.ResponseWriter, *http.Request, any)
+
+	// Called when a regex-validated path was found but pattern did not match
+	// and no other path is available.
+	//
+	// If nil, the request falls through to OnNotFound.
+	OnRegexNoMatch func(w http.ResponseWriter, r *http.Request, paramKey string)
 
 	// An optional http.HandlerFunc that is called on automatic OPTIONS requests.
 	// The handler is only called if its not nil and no OPTIONS
@@ -200,17 +228,21 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := r.URL.Path
+	var unmatchedParam string
 
 	if methodIndex := m.methodIndexOf(r.Method); methodIndex > -1 {
 		if tree := m.trees[methodIndex]; tree != nil {
-			if handler, tsr := tree.Get(path, r); handler != nil {
-				handler := handler.(HandlerFunc) // ugly cast but i cant cyclically reference httx.HandleFunc in radix package
-				err := handler(w, r)
-				if err != nil {
+			handler, up, tsr := tree.Get(path, r)
+			if handler != nil {
+				if err := handler.(HandlerFunc)(w, r); err != nil {
 					m.OnError(w, r, err)
 				}
 				return
-			} else if r.Method != http.MethodConnect && path != "/" {
+			}
+			if up != "" {
+				unmatchedParam = up
+			}
+			if r.Method != http.MethodConnect && path != "/" {
 				if ok := m.tryRedirect(w, r, tree, tsr, r.Method, path); ok {
 					return
 				}
@@ -220,14 +252,17 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Try to search in the wild method tree
 	if tree := m.trees[m.methodIndexOf(MethodWild)]; tree != nil {
-		if handler, tsr := tree.Get(path, r); handler != nil {
-			handler := handler.(HandlerFunc)
-			err := handler(w, r)
-			if err != nil {
+		handler, up, tsr := tree.Get(path, r)
+		if handler != nil {
+			if err := handler.(HandlerFunc)(w, r); err != nil {
 				m.OnError(w, r, err)
 			}
 			return
-		} else if r.Method != http.MethodConnect && path != "/" {
+		}
+		if up != "" && unmatchedParam == "" {
+			unmatchedParam = up
+		}
+		if r.Method != http.MethodConnect && path != "/" {
 			if ok := m.tryRedirect(w, r, tree, tsr, r.Method, path); ok {
 				return
 			}
@@ -248,6 +283,11 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if unmatchedParam != "" && m.OnRegexNoMatch != nil {
+		m.OnRegexNoMatch(w, r, unmatchedParam)
+		return
+	}
+
 	m.OnNotFound(w, r)
 }
 
@@ -260,7 +300,8 @@ func (m *Mux) tryRedirect(w http.ResponseWriter, r *http.Request, tree *radix.Tr
 	}
 
 	if tsr && m.RedirectTrailingSlash {
-		uri := make([]byte, 0, len(r.RequestURI)+1)
+		box := redirectURIPool.Get().(*redirectBox)
+		uri := box.buf[:0]
 
 		if len(path) > 1 && path[len(path)-1] == '/' {
 			uri = append(uri, path[:len(path)-1]...)
@@ -274,15 +315,20 @@ func (m *Mux) tryRedirect(w http.ResponseWriter, r *http.Request, tree *radix.Tr
 			uri = append(uri, r.URL.RawQuery...)
 		}
 
-		w.Header()["Location"] = []string{unsafe.String(&uri[0], len(uri))}
+		box.loc[0] = unsafe.String(&uri[0], len(uri))
+		w.Header()["Location"] = box.loc[:1]
 		w.WriteHeader(code)
+
+		box.buf = uri
+		redirectURIPool.Put(box)
 
 		return true
 	}
 
 	// Try to fix the request path
 	if m.RedirectCaseInsensitivePath {
-		uri := make([]byte, 0, len(r.RequestURI)+1)
+		box := redirectURIPool.Get().(*redirectBox)
+		uri := box.buf[:0]
 
 		if tree.FindCaseInsensitivePath(r.URL.Path, m.RedirectTrailingSlash, &uri) {
 			if len(r.URL.RawQuery) > 0 {
@@ -290,11 +336,18 @@ func (m *Mux) tryRedirect(w http.ResponseWriter, r *http.Request, tree *radix.Tr
 				uri = append(uri, r.URL.RawQuery...)
 			}
 
-			w.Header()["Location"] = []string{unsafe.String(&uri[0], len(uri))}
+			box.loc[0] = unsafe.String(&uri[0], len(uri))
+			w.Header()["Location"] = box.loc[:1]
 			w.WriteHeader(code)
+
+			box.buf = uri
+			redirectURIPool.Put(box)
 
 			return true
 		}
+
+		box.buf = uri
+		redirectURIPool.Put(box)
 	}
 
 	return false
@@ -308,7 +361,7 @@ func (m *Mux) Merge(prefix string, handler http.Handler) {
 		for method, paths := range h.registeredPaths {
 			for _, path := range paths {
 				methodIndex := h.methodIndexOf(method)
-				if h, _ := h.trees[methodIndex].Get(path, &http.Request{}); h != nil {
+				if h, _, _ := h.trees[methodIndex].Get(path, &http.Request{}); h != nil {
 					fullPath := prefix + path
 					if prefix != "" && path == "/" {
 						fullPath = prefix
@@ -464,7 +517,7 @@ func (m *Mux) allowed(path, reqMethod string) (allow []string) {
 				continue
 			}
 
-			handle, _ := m.trees[m.methodIndexOf(method)].Get(path, nil)
+			handle, _, _ := m.trees[m.methodIndexOf(method)].Get(path, nil)
 			if handle != nil {
 				// Add request method to list of allowed methods
 				allowed = append(allowed, method)

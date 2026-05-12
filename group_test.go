@@ -180,7 +180,7 @@ func TestGroup_shortcutsAndHandle(t *testing.T) {
 
 	methods := httpMethods[:len(httpMethods)-1] // Avoid customs methods
 	for _, method := range methods {
-		h, _ := r.trees[r.methodIndexOf(method)].Get("/v1/bar", nil)
+		h, _, _ := r.trees[r.methodIndexOf(method)].Get("/v1/bar", nil)
 		if h == nil {
 			t.Errorf("Bad shorcurt")
 		}
@@ -199,7 +199,7 @@ func TestGroup_shortcutsAndHandle(t *testing.T) {
 			t.Error("an error was expected with an empty path")
 		}
 
-		h, _ := r.trees[r.methodIndexOf(method)].Get("/v1/foo/bar", nil)
+		h, _, _ := r.trees[r.methodIndexOf(method)].Get("/v1/foo/bar", nil)
 		if h == nil {
 			t.Errorf("Bad shorcurt")
 		}
@@ -283,7 +283,7 @@ func TestGroupFSTemp(t *testing.T) {
 	group.Use(func(hf HandlerFunc) HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			groupMiddleware = true
-			return nil
+			return hf(w, r)
 		}
 	})
 

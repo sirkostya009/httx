@@ -2,7 +2,7 @@ package radix
 
 import (
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -93,7 +93,7 @@ func (n *node) findEndIndexAndValues(path string) (int, []string) {
 			continue
 		}
 
-		values[i] = strings.Clone(path[index[j-1]:index[j]])
+		values[i] = path[index[j-1]:index[j]]
 
 		i++
 	}
@@ -276,7 +276,9 @@ func (n *node) add(path, fullPath string, handler http.Handler) (*node, error) {
 	return n.insert(path, fullPath, handler)
 }
 
-func (n *node) getFromChild(path string, req *http.Request) (http.Handler, bool) {
+func (n *node) getFromChild(path string, req *http.Request) (http.Handler, string, bool) {
+	var unmatchedParam string
+
 	for _, child := range n.children {
 		switch child.nType {
 		case static:
@@ -292,42 +294,50 @@ func (n *node) getFromChild(path string, req *http.Request) (http.Handler, bool)
 					continue
 				}
 
-				h, tsr := child.getFromChild(path[len(child.path):], req)
+				h, up, tsr := child.getFromChild(path[len(child.path):], req)
 				if h != nil || tsr {
-					return h, tsr
+					return h, up, tsr
+				}
+				if up != "" && unmatchedParam == "" {
+					unmatchedParam = up
 				}
 			} else if path == child.path {
 				switch {
 				case child.tsr:
-					return nil, true
+					return nil, "", true
 				case child.handler != nil:
-					return child.handler, false
+					return child.handler, "", false
 				case child.wildcard != nil:
 					if req != nil {
 						req.SetPathValue(child.wildcard.paramKey, "")
 					}
 
-					return child.wildcard.handler, false
+					return child.wildcard.handler, "", false
 				}
 
-				return nil, false
+				return nil, unmatchedParam, false
 			}
 
 		case param:
 			end := segmentEndIndex(path, false)
-			values := []string{strings.Clone(path[:end])}
+			var values []string
 
 			if child.paramRegex != nil {
 				end, values = child.findEndIndexAndValues(path[:end])
 				if end == -1 {
+					if unmatchedParam == "" && len(child.paramKeys) > 0 {
+						unmatchedParam = child.paramKeys[0]
+					}
 					continue
 				}
+			} else {
+				values = []string{path[:end]}
 			}
 
 			if len(path) > end {
-				h, tsr := child.getFromChild(path[end:], req)
+				h, up, tsr := child.getFromChild(path[end:], req)
 				if tsr {
-					return nil, tsr
+					return nil, "", tsr
 				} else if h != nil {
 					if req != nil {
 						for i, key := range child.paramKeys {
@@ -335,13 +345,16 @@ func (n *node) getFromChild(path string, req *http.Request) (http.Handler, bool)
 						}
 					}
 
-					return h, false
+					return h, "", false
+				}
+				if up != "" && unmatchedParam == "" {
+					unmatchedParam = up
 				}
 
 			} else if len(path) == end {
 				switch {
 				case child.tsr:
-					return nil, true
+					return nil, "", true
 				case child.handler == nil:
 					// try another child
 					continue
@@ -351,7 +364,7 @@ func (n *node) getFromChild(path string, req *http.Request) (http.Handler, bool)
 					}
 				}
 
-				return child.handler, false
+				return child.handler, "", false
 			}
 
 		default:
@@ -364,10 +377,10 @@ func (n *node) getFromChild(path string, req *http.Request) (http.Handler, bool)
 			req.SetPathValue(n.wildcard.paramKey, strings.Clone(path))
 		}
 
-		return n.wildcard.handler, false
+		return n.wildcard.handler, "", false
 	}
 
-	return nil, false
+	return nil, unmatchedParam, false
 }
 
 func (n *node) find(path string, buf *[]byte) (bool, bool) {
@@ -470,26 +483,10 @@ func (n *node) sort() {
 		child.sort()
 	}
 
-	sort.Sort(n)
-}
-
-// Len returns the total number of children the node has
-func (n *node) Len() int {
-	return len(n.children)
-}
-
-// Swap swaps the order of children nodes
-func (n *node) Swap(i, j int) {
-	n.children[i], n.children[j] = n.children[j], n.children[i]
-}
-
-// Less checks if the node 'i' has less priority than the node 'j'
-func (n *node) Less(i, j int) bool {
-	if n.children[i].nType < n.children[j].nType {
-		return true
-	} else if n.children[i].nType > n.children[j].nType {
-		return false
-	}
-
-	return len(n.children[i].children) > len(n.children[j].children)
+	slices.SortFunc(n.children, func(a, b *node) int {
+		if a.nType != b.nType {
+			return int(a.nType) - int(b.nType)
+		}
+		return len(b.children) - len(a.children)
+	})
 }

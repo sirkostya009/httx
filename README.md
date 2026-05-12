@@ -52,11 +52,6 @@ mux.GET(`/{id:\d+}`, func(w http.ResponseWriter, r *http.Request) error {
 _ = http.ListenAndServe(":8080", mux)
 ```
 
-## TODO:
-
-- [ ] Fix all tests
-- [ ] Add `FS` method
-
 ## License
 
 The original BSD 3-clause license from [fasthttp/router](https://github.com/fasthttp/router/blob/master/LICENSE). See [LICENSE](LICENSE).

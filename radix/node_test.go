@@ -42,7 +42,7 @@ func checkRequests(t *testing.T, tree *Tree, requests testRequests) {
 	for _, request := range requests {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("METHOD", request.path, nil)
-		handler, _ := tree.Get(request.path, req)
+		handler, _, _ := tree.Get(request.path, req)
 
 		if handler == nil {
 			if !request.nilHandler {
@@ -379,7 +379,7 @@ func TestTreeTrailingSlashRedirect(t *testing.T) {
 		"/foo",
 	}
 	for _, route := range tsrRoutes {
-		handler, tsr := tree.Get(route, nil)
+		handler, _, tsr := tree.Get(route, nil)
 		if handler != nil {
 			t.Fatalf("non-nil handler for TSR route '%s", route)
 		} else if !tsr {
@@ -396,7 +396,7 @@ func TestTreeTrailingSlashRedirect(t *testing.T) {
 		"/api/world/abc",
 	}
 	for _, route := range noTsrRoutes {
-		handler, tsr := tree.Get(route, nil)
+		handler, _, tsr := tree.Get(route, nil)
 		if handler != nil {
 			t.Fatalf("non-nil handler for No-TSR route '%s", route)
 		} else if tsr {
@@ -416,7 +416,7 @@ func TestTreeRootTrailingSlashRedirect(t *testing.T) {
 		t.Fatalf("panic inserting test route: %v", recv)
 	}
 
-	handler, tsr := tree.Get("/", nil)
+	handler, _, tsr := tree.Get("/", nil)
 	if handler != nil {
 		t.Fatalf("non-nil handler")
 	} else if tsr {

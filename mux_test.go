@@ -717,6 +717,86 @@ func TestRouterPanicHandler(t *testing.T) {
 	}
 }
 
+var noopErrHandler = func(http.ResponseWriter, *http.Request) error { return nil }
+
+func TestOnRegexNoMatchFires(t *testing.T) {
+	router := NewMux()
+	router.GET(`/orders/{id:\d+}`, noopErrHandler)
+
+	var gotKey string
+	router.OnRegexNoMatch = func(w http.ResponseWriter, r *http.Request, paramKey string) {
+		gotKey = paramKey
+		w.WriteHeader(http.StatusBadRequest)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/orders/abc", nil)
+	router.ServeHTTP(rec, req)
+
+	if gotKey != "id" {
+		t.Errorf("paramKey == %q, want %q", gotKey, "id")
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status == %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestOnRegexNoMatchFallsThroughWhenNil(t *testing.T) {
+	router := NewMux()
+	router.GET(`/orders/{id:\d+}`, noopErrHandler)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/orders/abc", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status == %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestOnRegexNoMatchSkippedOnLiteralMatch(t *testing.T) {
+	router := NewMux()
+	router.GET(`/orders/{id:\d+}`, noopErrHandler)
+	router.GET("/orders/all", noopErrHandler)
+
+	fired := false
+	router.OnRegexNoMatch = func(w http.ResponseWriter, r *http.Request, paramKey string) {
+		fired = true
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/orders/all", nil)
+	router.ServeHTTP(rec, req)
+
+	if fired {
+		t.Error("OnRegexNoMatch fired when literal route matched")
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("status == %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestOnRegexNoMatchSkippedOnPlain404(t *testing.T) {
+	router := NewMux()
+	router.GET(`/orders/{id:\d+}`, noopErrHandler)
+
+	fired := false
+	router.OnRegexNoMatch = func(w http.ResponseWriter, r *http.Request, paramKey string) {
+		fired = true
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/totally/unrelated", nil)
+	router.ServeHTTP(rec, req)
+
+	if fired {
+		t.Error("OnRegexNoMatch fired on path that touched no regex param")
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status == %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
 func TestMiddleware(t *testing.T) {
 	router := NewMux()
 	middlewareHit := false
@@ -1089,7 +1169,7 @@ func TestGetOptionalPath(t *testing.T) {
 	for _, e := range expected {
 		req := &http.Request{}
 
-		h, tsr := r.trees[r.methodIndexOf("GET")].Get(e.path, req)
+		h, _, tsr := r.trees[r.methodIndexOf("GET")].Get(e.path, req)
 
 		if tsr != e.tsr {
 			t.Errorf("TSR (path: %s) == %v, want %v", e.path, tsr, e.tsr)

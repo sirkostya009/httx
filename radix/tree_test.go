@@ -22,8 +22,7 @@ func testHandlerAndParams(
 	t *testing.T, tree *Tree, reqPath string, handler http.Handler, wantTSR bool, params map[string]any,
 ) {
 	for _, req := range []*http.Request{httptest.NewRequest("GET", reqPath, nil), nil} {
-
-		h, tsr := tree.Get(reqPath, req)
+		h, _, tsr := tree.Get(reqPath, req)
 		if handler != nil && h != nil && reflect.ValueOf(handler).Pointer() != reflect.ValueOf(h).Pointer() {
 			t.Errorf("Path '%s' handler == %p, want %p", reqPath, h, handler)
 		}
@@ -272,9 +271,7 @@ func Test_TreeNilHandler(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("Expected panic")
-	}
-
-	if err != nil && panicMsg != fmt.Sprint(err) {
+	} else if panicMsg != fmt.Sprint(err) {
 		t.Errorf("Invalid conflict error text (%v)", err)
 	}
 }
@@ -315,6 +312,73 @@ func Test_TreeMutable(t *testing.T) {
 	}
 }
 
+func Test_GetUnmatchedParam(t *testing.T) {
+	tests := []struct {
+		name        string
+		routes      []string
+		reqPath     string
+		wantHandler bool
+		wantUP      string
+	}{
+		{
+			name:    "regex rejects, single param",
+			routes:  []string{`/orders/{id:\d+}`},
+			reqPath: "/orders/abc",
+			wantUP:  "id",
+		},
+		{
+			name:    "regex rejects, deeper in tree",
+			routes:  []string{`/users/{uid:\d+}/posts`},
+			reqPath: "/users/abc/posts",
+			wantUP:  "uid",
+		},
+		{
+			name:    "regex passes, later segment misses",
+			routes:  []string{`/orders/{id:\d+}/items`},
+			reqPath: "/orders/42/wrong",
+			wantUP:  "",
+		},
+		{
+			name:        "sibling literal matches, regex untouched",
+			routes:      []string{`/orders/{id:\d+}`, "/orders/all"},
+			reqPath:     "/orders/all",
+			wantHandler: true,
+			wantUP:      "",
+		},
+		{
+			name:    "plain miss, no regex involved",
+			routes:  []string{"/orders/{id}"},
+			reqPath: "/totally/different",
+			wantUP:  "",
+		},
+		{
+			name:        "non-regex param accepts anything",
+			routes:      []string{"/orders/{id}"},
+			reqPath:     "/orders/abc",
+			wantHandler: true,
+			wantUP:      "",
+		},
+	}
+
+	for _, tt := range tests {
+		tree := New()
+		for _, r := range tt.routes {
+			tree.Add(r, generateHandler())
+		}
+
+		h, up, _ := tree.Get(tt.reqPath, nil)
+		if tt.wantHandler && h == nil {
+			t.Errorf("%s: expected handler, got nil", tt.name)
+		}
+		if !tt.wantHandler && h != nil {
+			t.Errorf("%s: expected nil handler, got %p", tt.name, h)
+		}
+		if up != tt.wantUP {
+			t.Errorf("%s: unmatchedParam == %q, want %q", tt.name, up, tt.wantUP)
+		}
+	}
+}
+
 func Benchmark_Get(b *testing.B) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 
@@ -335,7 +399,7 @@ func Benchmark_Get(b *testing.B) {
 	tree.Add("/queries", handler)
 	tree.Add("/update", handler)
 
-	req := httptest.NewRequest("METHOD", "", nil)
+	req := httptest.NewRequest("METHOD", "/update", nil)
 
 	b.ResetTimer()
 
