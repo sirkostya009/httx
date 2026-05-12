@@ -1,6 +1,7 @@
 package httx
 
 import (
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"time"
@@ -9,19 +10,17 @@ import (
 var DefaultServeMux = NewMux()
 
 func init() {
-	DefaultServeMux.Use(DefaultSlogMiddleware())
+	DefaultServeMux.Use(DefaultSlogMiddleware)
 }
 
-func DefaultSlogMiddleware() func(HandlerFunc) HandlerFunc {
-	return func(next HandlerFunc) HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) error {
-			start := time.Now()
-			defer func() {
-				finish := time.Now()
-				slog.Info("request", "method", r.Method, "uri", r.RequestURI, "time-ms", finish.Sub(start).Milliseconds())
-			}()
-			return next(w, r)
-		}
+func DefaultSlogMiddleware(next HandlerFunc) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		start := time.Now()
+		defer func() {
+			finish := time.Now()
+			slog.Info("request", "method", r.Method, "uri", r.RequestURI, "time-ms", finish.Sub(start).Milliseconds())
+		}()
+		return next(w, r)
 	}
 }
 
@@ -73,10 +72,10 @@ func Merge(path string, handler http.Handler) {
 	DefaultServeMux.Merge(path, handler)
 }
 
-// func FS(path string, f fs.FS) {
-// 	DefaultServeMux.FS(path, f)
-// }
+func FS(path string, f fs.FS) {
+	DefaultServeMux.FS(path, f)
+}
 
-// func FileSystem(path string, f http.FileSystem) {
-// 	DefaultServeMux.FileSystem(path, f)
-// }
+func FileSystem(path string, f http.FileSystem) {
+	DefaultServeMux.FileSystem(path, f)
+}
