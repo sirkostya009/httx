@@ -13,7 +13,7 @@ type Group struct {
 	mw     []func(HandlerFunc) HandlerFunc
 }
 
-func (g *Group) Group(prefix string) *Group {
+func (g *Group) Group(prefix string, mw ...func(HandlerFunc) HandlerFunc) *Group {
 	if prefix == "" {
 		panic("group prefix must not be empty")
 	}
@@ -23,7 +23,7 @@ func (g *Group) Group(prefix string) *Group {
 	if !strings.HasPrefix(prefix, "/") {
 		panic(`group prefix must begin with "/"`)
 	}
-	return &Group{g.prefix + prefix, g.m, slices.Clip(g.mw)}
+	return &Group{g.prefix + prefix, g.m, append(slices.Clip(g.mw), mw...)}
 }
 
 func (g *Group) Use(mw ...func(HandlerFunc) HandlerFunc) {

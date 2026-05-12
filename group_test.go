@@ -11,7 +11,7 @@ import (
 )
 
 type routerGrouper interface {
-	Group(string) *Group
+	Group(string, ...func(HandlerFunc) HandlerFunc) *Group
 	// ServeFiles(path string, rootPath string)
 	// ServeFilesCustom(path string, fs *fasthttp.FS)
 }

@@ -143,7 +143,7 @@ func NewMux() *Mux {
 	}
 }
 
-func (m *Mux) Group(prefix string) *Group {
+func (m *Mux) Group(prefix string, mw ...func(HandlerFunc) HandlerFunc) *Group {
 	if prefix == "" {
 		panic("group prefix must not be empty")
 	}
@@ -153,7 +153,7 @@ func (m *Mux) Group(prefix string) *Group {
 	if !strings.HasPrefix(prefix, "/") {
 		panic(`group prefix must begin with "/"`)
 	}
-	return &Group{prefix, m, m.mw}
+	return &Group{prefix, m, append(slices.Clip(m.mw), mw...)}
 }
 
 func (m *Mux) Use(mw ...func(HandlerFunc) HandlerFunc) {
