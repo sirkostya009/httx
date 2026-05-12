@@ -81,11 +81,9 @@ type Mux struct {
 	OnNotFound func(http.ResponseWriter, *http.Request)
 
 	// Function to handle panics recovered from http handlers.
-	// It should be used to generate a error page and return the http error code
-	// 500 (Internal Server Error).
 	//
-	// The handler can be used to keep your server from crashing because of
-	// unrecovered panics.
+	// If nil it is user's job to recover from panics to prevent the process
+	// from crashing.
 	OnPanic func(http.ResponseWriter, *http.Request, any)
 
 	// Called when a regex-validated path was found but pattern did not match
