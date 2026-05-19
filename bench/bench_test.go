@@ -71,7 +71,8 @@ func newGin(f bool) *gin.Engine {
 	// gin's default trailing-slash redirect is on by default; mirror the flag.
 	r := gin.New()
 	r.RedirectTrailingSlash = f
-	r.RedirectFixedPath = false // gin has no case-insensitive fix
+	r.RedirectFixedPath = f
+	r.HandleMethodNotAllowed = true // off by default; without this gin returns 404 not 405
 	handler := func(c *gin.Context) {}
 	r.GET("/", handler)
 	r.GET("/users", handler)
@@ -151,9 +152,10 @@ func routers(f bool) []routerCase {
 var (
 	plain = routers(false)
 	fix   = routers(true)
-	// stdlib / chi / gin have no case-insensitive redirect; left in
-	// TrailingSlashFix bench since some of them do TSR.
-	caseFix = fix[:3] // httx, httprouter, chi (chi 404s, but kept for parity)
+	// chi does no redirects (verified: 404s on both case and slash mismatches).
+	tsrOnly = []routerCase{fix[0], fix[1], fix[3], fix[4]} // httx, httprouter, gin, net/http
+	// stdlib + chi have no case-insensitive redirect.
+	caseFix = []routerCase{fix[0], fix[1], fix[3]} // httx, httprouter, gin
 	// httprouter, gin, stdlib have no regex param support; chi and httx do.
 	regexOnly = []routerCase{plain[0], plain[2]}
 )
@@ -203,5 +205,5 @@ func BenchmarkRegexParam(b *testing.B)      { benchmarkPath(b, regexOnly, "GET",
 func BenchmarkWildcard(b *testing.B)        { benchmarkPath(b, plain, "GET", "/static/assets/css/main.css") }
 func BenchmarkMethodMismatch(b *testing.B)  { benchmarkPath(b, plain, "PATCH", "/users/42") }
 func BenchmarkNotFound(b *testing.B)        { benchmarkPath(b, plain, "GET", "/does/not/exist") }
-func BenchmarkTrailingSlash(b *testing.B)   { benchmarkPath(b, fix, "GET", "/inbox/") }
+func BenchmarkTrailingSlash(b *testing.B)   { benchmarkPath(b, tsrOnly, "GET", "/inbox/") }
 func BenchmarkCaseInsensitive(b *testing.B) { benchmarkPath(b, caseFix, "GET", "/ARTICLES/Published/") }

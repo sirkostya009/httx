@@ -56,66 +56,65 @@ _ = http.ListenAndServe(":8080", mux)
 
 Comparison against `httprouter`, `chi`, `gin`, and `net/http` on AMD Ryzen AI Max+ 395. Run with `-benchtime=10000x` with a warm up run. Source: [bench/](bench/).
 
-`gin` and `net/http` don't support regex param validation. `gin` and `net/http` don't redirect on case-mismatched paths.
+`gin` and `net/http` don't support regex param validation. `chi` and `net/http` don't redirect on case-mismatched paths. `chi` doesn't redirect on trailing-slash mismatches either.
 
 ```
 Simple
-  httx          17 ns/op     0 B/op    0 allocs/op
-  httprouter    23 ns/op     0 B/op    0 allocs/op
-  chi          264 ns/op   368 B/op    2 allocs/op
+  httx          19 ns/op     0 B/op    0 allocs/op
+  httprouter    21 ns/op     0 B/op    0 allocs/op
+  chi          291 ns/op   368 B/op    2 allocs/op
   gin           38 ns/op     0 B/op    0 allocs/op
-  net/http      67 ns/op     0 B/op    0 allocs/op
+  net/http      64 ns/op     0 B/op    0 allocs/op
 
 SingleParam
   httx          41 ns/op     0 B/op    0 allocs/op
-  httprouter    58 ns/op    64 B/op    1 allocs/op
-  chi          467 ns/op   704 B/op    4 allocs/op
-  gin           48 ns/op     0 B/op    0 allocs/op
+  httprouter    65 ns/op    64 B/op    1 allocs/op
+  chi          463 ns/op   704 B/op    4 allocs/op
+  gin           47 ns/op     0 B/op    0 allocs/op
   net/http     108 ns/op    16 B/op    1 allocs/op
 
 MultiParam
-  httx          71 ns/op     0 B/op    0 allocs/op
-  httprouter    65 ns/op    64 B/op    1 allocs/op
-  chi          511 ns/op   704 B/op    4 allocs/op
-  gin           60 ns/op     0 B/op    0 allocs/op
-  net/http     188 ns/op    48 B/op    2 allocs/op
+  httx          70 ns/op     0 B/op    0 allocs/op
+  httprouter    63 ns/op    64 B/op    1 allocs/op
+  chi          519 ns/op   704 B/op    4 allocs/op
+  gin           59 ns/op     0 B/op    0 allocs/op
+  net/http     183 ns/op    48 B/op    2 allocs/op
 
 RegexParam
-  httx         190 ns/op    48 B/op    2 allocs/op
-  chi          547 ns/op   704 B/op    4 allocs/op
+  httx         180 ns/op    48 B/op    2 allocs/op
+  chi          554 ns/op   704 B/op    4 allocs/op
 
 Wildcard
   httx          38 ns/op     0 B/op    0 allocs/op
-  httprouter    48 ns/op    32 B/op    1 allocs/op
-  chi          435 ns/op   704 B/op    4 allocs/op
+  httprouter    46 ns/op    32 B/op    1 allocs/op
+  chi          440 ns/op   704 B/op    4 allocs/op
   gin           46 ns/op     0 B/op    0 allocs/op
-  net/http     363 ns/op    96 B/op    5 allocs/op
+  net/http     358 ns/op    96 B/op    5 allocs/op
 
 MethodMismatch
-  httx         121 ns/op    64 B/op    1 allocs/op
-  httprouter   715 ns/op   276 B/op    8 allocs/op
-  chi          676 ns/op   631 B/op    2 allocs/op
-  gin           48 ns/op    52 B/op    0 allocs/op
-  net/http    1907 ns/op   588 B/op   27 allocs/op
+  httx         115 ns/op    64 B/op    1 allocs/op
+  httprouter   703 ns/op   276 B/op    8 allocs/op
+  chi          657 ns/op   631 B/op    2 allocs/op
+  gin          201 ns/op   131 B/op    3 allocs/op
+  net/http    1940 ns/op   588 B/op   27 allocs/op
 
 NotFound
-  httx          55 ns/op     0 B/op    0 allocs/op
-  httprouter   360 ns/op   100 B/op    3 allocs/op
+  httx          56 ns/op     0 B/op    0 allocs/op
+  httprouter   359 ns/op   100 B/op    3 allocs/op
   chi          512 ns/op   468 B/op    5 allocs/op
-  gin           64 ns/op    52 B/op    0 allocs/op
+  gin          113 ns/op   100 B/op    1 allocs/op
   net/http     186 ns/op    48 B/op    3 allocs/op
 
 TrailingSlash
   httx          54 ns/op     0 B/op    0 allocs/op
-  httprouter   234 ns/op   184 B/op    3 allocs/op
-  chi          512 ns/op   468 B/op    5 allocs/op
-  gin          516 ns/op   280 B/op    8 allocs/op
-  net/http     108 ns/op    16 B/op    1 allocs/op
+  httprouter   258 ns/op   184 B/op    3 allocs/op
+  gin          417 ns/op   280 B/op    8 allocs/op
+  net/http     103 ns/op    16 B/op    1 allocs/op
 
 CaseInsensitive
-  httx          95 ns/op     0 B/op    0 allocs/op
-  httprouter   409 ns/op   216 B/op    4 allocs/op
-  chi          527 ns/op   468 B/op    5 allocs/op
+  httx          94 ns/op     0 B/op    0 allocs/op
+  httprouter   400 ns/op   216 B/op    4 allocs/op
+  gin          596 ns/op   408 B/op    8 allocs/op
 ```
 
 ## License
