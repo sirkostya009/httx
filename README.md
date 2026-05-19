@@ -52,6 +52,25 @@ mux.GET(`/{id:\d+}`, func(w http.ResponseWriter, r *http.Request) error {
 _ = http.ListenAndServe(":8080", mux)
 ```
 
+## Benchmarks
+
+Comparison against `httprouter`, `chi`, `gin`, and stdlib `net/http`. Run with `-benchtime=10s`, no CPU limit, on AMD Ryzen AI Max+ 395 (32 logical cores). Source: [bench/](bench/).
+
+```
+bench            httx    httprouter  chi    gin    stdlib
+Simple           17ns    22ns        221ns  38ns   68ns
+SingleParam      41ns    63ns        394ns  47ns   112ns
+MultiParam       68ns    73ns        434ns  59ns   197ns
+RegexParam       199ns   -           480ns  -      -
+Wildcard         57ns    54ns        371ns  47ns   392ns
+MethodMismatch   249ns   614ns       543ns  53ns   1684ns
+NotFound         179ns   371ns       383ns  65ns   200ns
+TrailingSlash    54ns    269ns       386ns  514ns  110ns
+CaseInsensitive  94ns    458ns       386ns  -      -
+```
+
+`-` means the router does not support that feature. `gin` and `stdlib` don't have regex param validation. `gin` and `stdlib` don't redirect on case-mismatched paths.
+
 ## License
 
 The original BSD 3-clause license from [fasthttp/router](https://github.com/fasthttp/router/blob/master/LICENSE). See [LICENSE](LICENSE).
@@ -59,6 +78,7 @@ The original BSD 3-clause license from [fasthttp/router](https://github.com/fast
 ## Appendix
 
 ### `ResolvePath` function:
+
 ```go
 var base, _ = url.Parse("/")
 
