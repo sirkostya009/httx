@@ -1,20 +1,22 @@
 # HTTp eXtended
 
-Fork of [fasthttp/router](https://github.com/fasthttp/router/) adapted for `http.Handler`.
+Fork of [fasthttp/router](https://github.com/fasthttp/router/) adapted for `http.Handler`. 0 dependencies.
 
-Engineered as a simple improvement upon standard `net/http` implementation of ServeMux, with main algorithm and ergonomics largely borrowed from `fasthttp/router`.
+Main algorithm and ergonomics largely borrowed from `fasthttp/router` with a few additions and performance
+optimizations.
 
-Thus, this multiplexer has optional and regex path params unlike the standard one.
+All standard features present in `fasthttp/router` are present here as well.
 
-Inherits 0 allocation routing, except for redirects. This is a deliberate choice attempting to strip away any external deps from codebase.
+Simple routes do 0 allocations. Redirects and case-insensitive path fixing redirects allocate a few bytes,
+latter allocates only via a pool. Also, RedirectCaseInsensitivePath (RedirectFixedPath in `fasthttp/router`)
+doesn't resolve incoming relative paths (`http.Server` already deals with that).
 
-Additionally, RedirectCaseInsensitivePath (RedirectFixedPath in `fasthttp/router`) works differently by only matching case insensitive paths, with path resolution done by `http.Server`.
+Regex is most expensive due to inefficiencies in stdlib's `regexp` implementation.
 
-If you're not using `http.Server` and need path resolution, I suggest you utilize `ResolvePath` mux wrapper function from [appendix section](#appendix).
+If you're not using `http.Server` and need path resolution, I can only suggest implementing a basic implemention
+from [Appendix](#appendix).
 
-You _may_ want to disable redirects if you run into GC issues (but this router would probably be the least of your allocation problems anyway).
-
-# Usage
+## Usage
 
 ```go
 mux := httx.NewMux()
@@ -52,9 +54,11 @@ mux.GET(`/{id:\d+}`, func(w http.ResponseWriter, r *http.Request) error {
 _ = http.ListenAndServe(":8080", mux)
 ```
 
+See [example_test.go](./example_test.go) for a more interesting example.
+
 ## Benchmarks
 
-Comparison against `httprouter`, `chi`, `gin`, and `net/http` on AMD Ryzen AI Max+ 395. Run with `-benchtime=10000x` with a warm up run. Source: [bench/](bench/).
+Comparison against `httprouter`, `chi`, `gin`, and `net/http` on AMD Ryzen AI Max+ 395. Run with `-benchtime=10000x` with a warm up run. See [bench_test.go](bench/bench_test.go).
 
 `gin` and `net/http` don't support regex param validation. `chi` and `net/http` don't redirect on case-mismatched paths. `chi` doesn't redirect on trailing-slash mismatches either.
 
