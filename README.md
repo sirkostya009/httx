@@ -54,22 +54,69 @@ _ = http.ListenAndServe(":8080", mux)
 
 ## Benchmarks
 
-Comparison against `httprouter`, `chi`, `gin`, and stdlib `net/http`. Run with `-benchtime=10s`, no CPU limit, on AMD Ryzen AI Max+ 395 (32 logical cores). Source: [bench/](bench/).
+Comparison against `httprouter`, `chi`, `gin`, and `net/http` on AMD Ryzen AI Max+ 395. Run with `-benchtime=10000x` with a warm up run. Source: [bench/](bench/).
+
+`gin` and `net/http` don't support regex param validation. `gin` and `net/http` don't redirect on case-mismatched paths.
 
 ```
-bench            httx    httprouter  chi    gin    stdlib
-Simple           17ns    22ns        221ns  38ns   68ns
-SingleParam      41ns    63ns        394ns  47ns   112ns
-MultiParam       68ns    73ns        434ns  59ns   197ns
-RegexParam       199ns   -           480ns  -      -
-Wildcard         57ns    54ns        371ns  47ns   392ns
-MethodMismatch   249ns   614ns       543ns  53ns   1684ns
-NotFound         179ns   371ns       383ns  65ns   200ns
-TrailingSlash    54ns    269ns       386ns  514ns  110ns
-CaseInsensitive  94ns    458ns       386ns  -      -
-```
+Simple
+  httx          17 ns/op     0 B/op    0 allocs/op
+  httprouter    23 ns/op     0 B/op    0 allocs/op
+  chi          264 ns/op   368 B/op    2 allocs/op
+  gin           38 ns/op     0 B/op    0 allocs/op
+  net/http      67 ns/op     0 B/op    0 allocs/op
 
-`-` means the router does not support that feature. `gin` and `stdlib` don't have regex param validation. `gin` and `stdlib` don't redirect on case-mismatched paths.
+SingleParam
+  httx          41 ns/op     0 B/op    0 allocs/op
+  httprouter    58 ns/op    64 B/op    1 allocs/op
+  chi          467 ns/op   704 B/op    4 allocs/op
+  gin           48 ns/op     0 B/op    0 allocs/op
+  net/http     108 ns/op    16 B/op    1 allocs/op
+
+MultiParam
+  httx          71 ns/op     0 B/op    0 allocs/op
+  httprouter    65 ns/op    64 B/op    1 allocs/op
+  chi          511 ns/op   704 B/op    4 allocs/op
+  gin           60 ns/op     0 B/op    0 allocs/op
+  net/http     188 ns/op    48 B/op    2 allocs/op
+
+RegexParam
+  httx         190 ns/op    48 B/op    2 allocs/op
+  chi          547 ns/op   704 B/op    4 allocs/op
+
+Wildcard
+  httx          38 ns/op     0 B/op    0 allocs/op
+  httprouter    48 ns/op    32 B/op    1 allocs/op
+  chi          435 ns/op   704 B/op    4 allocs/op
+  gin           46 ns/op     0 B/op    0 allocs/op
+  net/http     363 ns/op    96 B/op    5 allocs/op
+
+MethodMismatch
+  httx         121 ns/op    64 B/op    1 allocs/op
+  httprouter   715 ns/op   276 B/op    8 allocs/op
+  chi          676 ns/op   631 B/op    2 allocs/op
+  gin           48 ns/op    52 B/op    0 allocs/op
+  net/http    1907 ns/op   588 B/op   27 allocs/op
+
+NotFound
+  httx          55 ns/op     0 B/op    0 allocs/op
+  httprouter   360 ns/op   100 B/op    3 allocs/op
+  chi          512 ns/op   468 B/op    5 allocs/op
+  gin           64 ns/op    52 B/op    0 allocs/op
+  net/http     186 ns/op    48 B/op    3 allocs/op
+
+TrailingSlash
+  httx          54 ns/op     0 B/op    0 allocs/op
+  httprouter   234 ns/op   184 B/op    3 allocs/op
+  chi          512 ns/op   468 B/op    5 allocs/op
+  gin          516 ns/op   280 B/op    8 allocs/op
+  net/http     108 ns/op    16 B/op    1 allocs/op
+
+CaseInsensitive
+  httx          95 ns/op     0 B/op    0 allocs/op
+  httprouter   409 ns/op   216 B/op    4 allocs/op
+  chi          527 ns/op   468 B/op    5 allocs/op
+```
 
 ## License
 

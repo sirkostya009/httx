@@ -165,15 +165,24 @@ func benchmarkPath(b *testing.B, rs []routerCase, method, path string) {
 			req := httptest.NewRequest(method, path, nil)
 			origPath := req.URL.Path
 			w := httptest.NewRecorder()
+
+			// warm caches + lazy init (regex machine pools, etc.)
+			for range 100 {
+				req.URL.Path = origPath
+				rc.h.ServeHTTP(w, req)
+			}
+
 			var start, end runtime.MemStats
 			runtime.ReadMemStats(&start)
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+
+			for b.Loop() {
 				// httx and httprouter mutate path on redirects, reset
 				req.URL.Path = origPath
 				rc.h.ServeHTTP(w, req)
 			}
+
 			b.StopTimer()
 			runtime.ReadMemStats(&end)
 			totalBytes := end.TotalAlloc - start.TotalAlloc

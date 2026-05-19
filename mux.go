@@ -99,12 +99,12 @@ type Mux struct {
 	// The "Allowed" header is set before calling the handler.
 	GlobalOPTIONS func(http.ResponseWriter, *http.Request)
 
-	mw                 []func(HandlerFunc) HandlerFunc
-	trees              []*radix.Tree
-	customMethodsIndex map[string]int
-	registeredPaths    map[string][]string
-	globalAllowed      []string
-	treeMutable        bool
+	mw              []func(HandlerFunc) HandlerFunc
+	trees           []*radix.Tree
+	methodNames     []string
+	registeredPaths map[string][]string
+	globalAllowed   []string
+	treeMutable     bool
 
 	// Enables automatic redirection if the current route can't be matched but a
 	// handler for the path with (without) the trailing slash exists.
@@ -128,9 +128,20 @@ type Mux struct {
 
 func NewMux() *Mux {
 	return &Mux{
-		trees:                       make([]*radix.Tree, 10),
-		customMethodsIndex:          map[string]int{},
-		registeredPaths:             map[string][]string{},
+		trees: make([]*radix.Tree, 10),
+		methodNames: []string{
+			http.MethodGet,
+			http.MethodHead,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodPatch,
+			http.MethodDelete,
+			http.MethodConnect,
+			http.MethodOptions,
+			http.MethodTrace,
+			MethodWild,
+		},
+		registeredPaths:             make(map[string][]string, 10),
 		RedirectTrailingSlash:       true,
 		RedirectCaseInsensitivePath: true,
 		OnError:                     DefaultErrorHandler,
@@ -464,7 +475,7 @@ func (m *Mux) Handle(method, path string, handler HandlerFunc) {
 
 		m.trees = append(m.trees, tree)
 		methodIndex = len(m.trees) - 1
-		m.customMethodsIndex[method] = methodIndex
+		m.methodNames = append(m.methodNames, method)
 	}
 
 	tree := m.trees[methodIndex]
@@ -492,54 +503,62 @@ func (m *Mux) Handle(method, path string, handler HandlerFunc) {
 	}
 }
 
-func (m *Mux) allowed(path, reqMethod string) (allow []string) {
-	allowed := make([]string, 0, 9)
-
+func (m *Mux) allowed(path, reqMethod string) []string {
 	if path == "*" || path == "/*" { // server-wide
 		// empty method is used for internal calls to refresh the cache
 		if reqMethod == "" {
-			for method := range m.registeredPaths {
-				if method == http.MethodOptions {
+			out := make([]string, 0, len(m.methodNames)+1)
+			for i, name := range m.methodNames {
+				if name == http.MethodOptions || m.trees[i] == nil {
 					continue
 				}
-				// Add request method to list of allowed methods
-				allowed = append(allowed, method)
+				out = append(out, name)
 			}
-		} else {
-			return m.globalAllowed
+			if len(out) == 0 {
+				return nil
+			}
+			if m.GlobalOPTIONS != nil {
+				out = append(out, http.MethodOptions)
+			}
+			slices.Sort(out)
+			return out
 		}
-	} else { // specific path
-		for method := range m.registeredPaths {
-			// Skip the requested method - we already tried this one
-			if method == reqMethod || method == http.MethodOptions {
-				continue
-			}
+		return m.globalAllowed
+	}
 
-			handle, _, _ := m.trees[m.methodIndexOf(method)].Get(path, nil)
-			if handle != nil {
-				// Add request method to list of allowed methods
-				allowed = append(allowed, method)
-			}
+	// Stack-allocated scratch — we only heap-alloc if there's actually
+	// something to return, so NotFound (the common case where no other
+	// method matches) stays zero-alloc.
+	var stack [9]string
+	n := 0
+	for i, name := range m.methodNames {
+		if name == reqMethod || name == http.MethodOptions {
+			continue
+		}
+		tree := m.trees[i]
+		if tree == nil {
+			continue
+		}
+
+		handle, _, _ := tree.Get(path, nil)
+		if handle != nil {
+			stack[n] = name
+			n++
 		}
 	}
 
-	if len(allowed) > 0 {
-		// Add request method to list of allowed methods
-		allowed = append(allowed, http.MethodOptions)
-
-		// Sort allowed methods.
-		// sort.Strings(allowed) unfortunately causes unnecessary allocations
-		// due to allowed being moved to the heap and interface conversion
-		for i, l := 1, len(allowed); i < l; i++ {
-			for j := i; j > 0 && allowed[j] < allowed[j-1]; j-- {
-				allowed[j], allowed[j-1] = allowed[j-1], allowed[j]
-			}
-		}
-
-		return allowed
+	if n == 0 {
+		return nil
 	}
 
-	return
+	if m.GlobalOPTIONS != nil {
+		stack[n] = http.MethodOptions
+		n++
+	}
+
+	out := make([]string, n)
+	copy(out, stack[:n])
+	return out
 }
 
 // getOptionalPaths returns all possible paths when the original path
@@ -644,8 +663,10 @@ func (m *Mux) methodIndexOf(method string) int {
 		return 9
 	}
 
-	if i, ok := m.customMethodsIndex[method]; ok {
-		return i
+	for i, name := range m.methodNames[10:] {
+		if name == method {
+			return i + 10
+		}
 	}
 
 	return -1

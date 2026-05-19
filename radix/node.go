@@ -374,7 +374,7 @@ func (n *node) getFromChild(path string, req *http.Request) (http.Handler, strin
 
 	if n.wildcard != nil {
 		if req != nil {
-			req.SetPathValue(n.wildcard.paramKey, strings.Clone(path))
+			req.SetPathValue(n.wildcard.paramKey, path)
 		}
 
 		return n.wildcard.handler, "", false

@@ -396,7 +396,11 @@ func TestRouterOPTIONS(t *testing.T) {
 
 		if rec.Result().StatusCode != expectedStatusCode {
 			t.Errorf("OPTIONS handling failed: Code=%d, Header=%v", rec.Result().StatusCode, rec.Result().Header)
-		} else if allow := (rec.Result().Header.Values("Allow")); strings.Join(allow, ", ") != expectedAllowed {
+			return
+		}
+		allow := slices.Clone(rec.Result().Header.Values("Allow"))
+		slices.Sort(allow)
+		if strings.Join(allow, ", ") != expectedAllowed {
 			t.Error("unexpected Allow header value:", allow)
 		}
 	}
@@ -471,7 +475,11 @@ func TestRouterNotAllowed(t *testing.T) {
 
 		if rec.Result().StatusCode != expectedStatusCode {
 			t.Errorf("NotAllowed handling failed:: Code=%d, Header=%v", rec.Result().StatusCode, rec.Result().Header)
-		} else if allow := (rec.Result().Header.Values("Allow")); strings.Join(allow, ", ") != expectedAllowed {
+			return
+		}
+		allow := slices.Clone(rec.Result().Header.Values("Allow"))
+		slices.Sort(allow)
+		if strings.Join(allow, ", ") != expectedAllowed {
 			t.Error("unexpected Allow header value:", allow)
 		}
 	}
@@ -504,7 +512,9 @@ func TestRouterNotAllowed(t *testing.T) {
 	if rec.Result().StatusCode != http.StatusTeapot {
 		t.Errorf("unexpected response code %d want %d", rec.Result().StatusCode, http.StatusTeapot)
 	}
-	if allow := (rec.Result().Header.Values("Allow")); strings.Join(allow, ", ") != "DELETE, OPTIONS, POST" {
+	allow := slices.Clone(rec.Result().Header.Values("Allow"))
+	slices.Sort(allow)
+	if strings.Join(allow, ", ") != "DELETE, OPTIONS, POST" {
 		t.Error("unexpected Allow header value:", allow)
 	}
 }
