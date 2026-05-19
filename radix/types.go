@@ -21,28 +21,31 @@ type nodeWildcard struct {
 }
 
 type node struct {
-	nType nodeType
-
 	path         string
-	tsr          bool
 	handler      http.Handler
-	hasWildChild bool
 	children     []*node
 	wildcard     *nodeWildcard
 
 	paramKeys  []string
 	paramRegex *regexp.Regexp
+
+	nType nodeType
+
+	tsr          bool
+	hasWildChild bool
 }
 
 type wildPath struct {
 	path  string
 	keys  []string
-	start int
-	end   int
-	pType nodeType
 
 	pattern string
 	regex   *regexp.Regexp
+
+	start int
+	end   int
+
+	pType nodeType
 }
 
 // Tree is a routes storage
