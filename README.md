@@ -58,68 +58,75 @@ See [example_test.go](./example_test.go) for a more interesting example.
 
 ## Benchmarks
 
-Comparison against `httprouter`, `chi`, `gin`, and `net/http` on AMD Ryzen AI Max+ 395. Run with `-benchtime=10000x` with a warm up run. See [bench_test.go](bench/bench_test.go).
-
-`gin` and `net/http` don't support regex param validation. `chi` and `net/http` don't redirect on case-mismatched paths. `chi` doesn't redirect on trailing-slash mismatches either.
+Comparison against `httprouter`, `chi`, `gin`, and `net/http` on AMD Ryzen AI Max+ 395. Run with `-benchtime=1000000x`
+over ~260-route deeply-nested REST surface. See [bench_test.go](bench/bench_test.go).
 
 ```
-Simple
-  httx          19 ns/op     0 B/op    0 allocs/op
-  httprouter    21 ns/op     0 B/op    0 allocs/op
-  chi          291 ns/op   368 B/op    2 allocs/op
-  gin           38 ns/op     0 B/op    0 allocs/op
-  net/http      64 ns/op     0 B/op    0 allocs/op
+Simple                                 GET /healthz
+  httx          18 ns/op     0 B/op    0 allocs/op
+  httprouter    20 ns/op     0 B/op    0 allocs/op
+  chi          366 ns/op   368 B/op    2 allocs/op
+  gin           39 ns/op     0 B/op    0 allocs/op
+  net/http      68 ns/op     0 B/op    0 allocs/op
 
-SingleParam
-  httx          41 ns/op     0 B/op    0 allocs/op
-  httprouter    65 ns/op    64 B/op    1 allocs/op
-  chi          463 ns/op   704 B/op    4 allocs/op
-  gin           47 ns/op     0 B/op    0 allocs/op
-  net/http     108 ns/op    16 B/op    1 allocs/op
+SingleParam                            GET /api/v2/sessions/{sessionId}
+  httx          53 ns/op     0 B/op    0 allocs/op
+  httprouter    80 ns/op    32 B/op    1 allocs/op
+  chi          665 ns/op   704 B/op    4 allocs/op
+  gin           62 ns/op     0 B/op    0 allocs/op
+  net/http     221 ns/op    16 B/op    1 allocs/op
 
-MultiParam
-  httx          70 ns/op     0 B/op    0 allocs/op
-  httprouter    63 ns/op    64 B/op    1 allocs/op
-  chi          519 ns/op   704 B/op    4 allocs/op
-  gin           59 ns/op     0 B/op    0 allocs/op
-  net/http     183 ns/op    48 B/op    2 allocs/op
+MultiParam                             GET .../repositories/{repoId}/branches/{branchName}/commits/{commitSha}/diff
+  httx         188 ns/op     0 B/op    0 allocs/op
+  httprouter   240 ns/op   192 B/op    1 allocs/op
+  chi          989 ns/op   704 B/op    4 allocs/op
+  gin          163 ns/op     0 B/op    0 allocs/op
+  net/http     917 ns/op   240 B/op    4 allocs/op
 
-RegexParam
-  httx         180 ns/op    48 B/op    2 allocs/op
-  chi          554 ns/op   704 B/op    4 allocs/op
+RegexParam                             GET /api/v1/orders/{orderId:\d+}/lines/{lineNo:\d+}
+  httx         440 ns/op    96 B/op    4 allocs/op
+  chi          927 ns/op   704 B/op    4 allocs/op
 
-Wildcard
-  httx          38 ns/op     0 B/op    0 allocs/op
-  httprouter    46 ns/op    32 B/op    1 allocs/op
-  chi          440 ns/op   704 B/op    4 allocs/op
-  gin           46 ns/op     0 B/op    0 allocs/op
-  net/http     358 ns/op    96 B/op    5 allocs/op
+Wildcard                               GET .../commits/{commitSha}/files/{filepath:*}
+  httx         212 ns/op     0 B/op    0 allocs/op
+  httprouter   223 ns/op   192 B/op    1 allocs/op
+  chi         1043 ns/op   704 B/op    4 allocs/op
+  gin          125 ns/op     0 B/op    0 allocs/op
+  net/http    1520 ns/op   608 B/op    9 allocs/op
 
-MethodMismatch
-  httx         115 ns/op    64 B/op    1 allocs/op
-  httprouter   703 ns/op   276 B/op    8 allocs/op
-  chi          657 ns/op   631 B/op    2 allocs/op
-  gin          201 ns/op   131 B/op    3 allocs/op
-  net/http    1940 ns/op   588 B/op   27 allocs/op
+MethodMismatch                         OPTIONS .../payment_methods/{pmId}/transactions/{txnId}
+  httx         461 ns/op    96 B/op    1 allocs/op
+  httprouter  1197 ns/op   704 B/op    7 allocs/op
+  chi          602 ns/op   368 B/op    2 allocs/op
+  gin          581 ns/op   307 B/op    4 allocs/op
+  net/http    6127 ns/op  2627 B/op   75 allocs/op
 
-NotFound
-  httx          56 ns/op     0 B/op    0 allocs/op
-  httprouter   359 ns/op   100 B/op    3 allocs/op
-  chi          512 ns/op   468 B/op    5 allocs/op
-  gin          113 ns/op   100 B/op    1 allocs/op
-  net/http     186 ns/op    48 B/op    3 allocs/op
+NotFound                               GET /api/v2/does/not/exist/at/all
+  httx         204 ns/op     0 B/op    0 allocs/op
+  httprouter   226 ns/op     0 B/op    0 allocs/op
+  chi          374 ns/op   368 B/op    2 allocs/op
+  gin          244 ns/op   131 B/op    1 allocs/op
+  net/http     458 ns/op   128 B/op    7 allocs/op
 
-TrailingSlash
-  httx          54 ns/op     0 B/op    0 allocs/op
-  httprouter   258 ns/op   184 B/op    3 allocs/op
-  gin          417 ns/op   280 B/op    8 allocs/op
-  net/http     103 ns/op    16 B/op    1 allocs/op
+TrailingSlash                          GET /inbox/
+  httx          55 ns/op     0 B/op    0 allocs/op
+  httprouter   321 ns/op   184 B/op    3 allocs/op
+  gin          569 ns/op   280 B/op    8 allocs/op
+  net/http     122 ns/op    16 B/op    1 allocs/op
 
-CaseInsensitive
-  httx          94 ns/op     0 B/op    0 allocs/op
-  httprouter   400 ns/op   216 B/op    4 allocs/op
-  gin          596 ns/op   408 B/op    8 allocs/op
+CaseInsensitive                        GET /ARTICLES/Published/
+  httx          95 ns/op     0 B/op    0 allocs/op
+  httprouter   510 ns/op   216 B/op    4 allocs/op
+  gin          760 ns/op   408 B/op    8 allocs/op
 ```
+
+Due do compatibility with stdlib's `net/http.Request.SetPathValue` performance on param paths takes a hit,
+especially the wildcard. Raw performance of `gin`, `httprouter` and `httx` is the same as the underlying algorithm
+is the same :).
+
+`gin`, `httprouter` and `net/http` don't support regex param validation. `chi` and `net/http` don't redirect on case-mismatched paths. `chi` doesn't redirect on trailing-slash mismatches either.
+
+All routers configured with status-only 404/405 handlers (no body) so miss-path numbers reflect dispatch cost, not default-body writing. `net/http` can't be customized this way — its 404 path always writes `"404 page not found\n"`.
 
 ## License
 

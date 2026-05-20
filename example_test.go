@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/sirkostya009/httx"
@@ -30,14 +31,19 @@ func (w *customWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
+var cwPool = sync.Pool{New: func() any {
+	return &customWriter{}
+}}
+
 func (s *ExampleServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// preflight code
+	cw := cwPool.Get().(*customWriter)
+	defer cwPool.Put(cw)
+	*cw = customWriter{w, 0}
 
 	start := time.Now()
-
-	cw := &customWriter{ResponseWriter: w}
-
 	s.r.ServeHTTP(cw, r)
+	end := time.Now()
+
 	if cw.status == 0 {
 		cw.status = 200
 	}
@@ -47,16 +53,12 @@ func (s *ExampleServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger = slog.ErrorContext
 	}
 
-	end := time.Now()
-
 	logger(r.Context(),
 		"incoming",
 		slog.Int("code", cw.status),
 		slog.String("method", r.Method),
 		slog.String("path", r.URL.Path),
 		slog.Duration("time", end.Sub(start)))
-
-	// postflight code
 }
 
 func Example() {
