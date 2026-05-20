@@ -13,7 +13,7 @@ doesn't resolve incoming relative paths (`http.Server` already deals with that).
 
 Regex is most expensive due to inefficiencies in stdlib's `regexp` implementation.
 
-If you're not using `http.Server` and need path resolution, I can only suggest implementing a basic implemention
+If you're not using `http.Server` and need path resolution, I can only suggest copying a basic implemention
 from [Appendix](#appendix).
 
 ## Usage
@@ -59,72 +59,74 @@ See [example_test.go](./example_test.go) for a more interesting example.
 ## Benchmarks
 
 Comparison against `httprouter`, `chi`, `gin`, and `net/http` on AMD Ryzen AI Max+ 395. Run with `-benchtime=1000000x`
-over ~260-route deeply-nested REST surface. See [bench_test.go](bench/bench_test.go).
+over a ~260-route deeply-nested REST surface. Each bench cycles through 64 distinct (method, path) hits generated
+from a fixed seed — no single hot URL. See [bench_test.go](bench/bench_test.go).
 
 ```
-Simple                                 GET /healthz
-  httx          18 ns/op     0 B/op    0 allocs/op
-  httprouter    20 ns/op     0 B/op    0 allocs/op
-  chi          366 ns/op   368 B/op    2 allocs/op
-  gin           39 ns/op     0 B/op    0 allocs/op
-  net/http      68 ns/op     0 B/op    0 allocs/op
+Simple                                 {GET,POST,PUT,DELETE,PATCH} {/, /healthz, /livez, /readyz, /metrics}
+  httx          16 ns/op     0 B/op    0 allocs/op
+  httprouter    24 ns/op     0 B/op    0 allocs/op
+  chi          400 ns/op   368 B/op    2 allocs/op
+  gin           53 ns/op     0 B/op    0 allocs/op
+  net/http      86 ns/op     0 B/op    0 allocs/op
 
-SingleParam                            GET /api/v2/sessions/{sessionId}
-  httx          53 ns/op     0 B/op    0 allocs/op
-  httprouter    80 ns/op    32 B/op    1 allocs/op
-  chi          665 ns/op   704 B/op    4 allocs/op
-  gin           62 ns/op     0 B/op    0 allocs/op
-  net/http     221 ns/op    16 B/op    1 allocs/op
+SingleParam                            {*} /api/v{1..3}/sessions/{sessionId}
+  httx          75 ns/op     0 B/op    0 allocs/op
+  httprouter   104 ns/op    32 B/op    1 allocs/op
+  chi          707 ns/op   704 B/op    4 allocs/op
+  gin           78 ns/op     0 B/op    0 allocs/op
+  net/http     252 ns/op    16 B/op    1 allocs/op
 
-MultiParam                             GET .../repositories/{repoId}/branches/{branchName}/commits/{commitSha}/diff
-  httx         188 ns/op     0 B/op    0 allocs/op
-  httprouter   240 ns/op   192 B/op    1 allocs/op
-  chi          989 ns/op   704 B/op    4 allocs/op
-  gin          163 ns/op     0 B/op    0 allocs/op
-  net/http     917 ns/op   240 B/op    4 allocs/op
+MultiParam                             {*} /api/v{1..3}/organizations/{orgId}/projects/{projectId}/repositories/{repoId}/branches/{branchName}/commits/{commitSha}/diff
+  httx         243 ns/op     0 B/op    0 allocs/op
+  httprouter   272 ns/op   192 B/op    1 allocs/op
+  chi         1009 ns/op   704 B/op    4 allocs/op
+  gin          183 ns/op     0 B/op    0 allocs/op
+  net/http     922 ns/op   240 B/op    4 allocs/op
 
-RegexParam                             GET /api/v1/orders/{orderId:\d+}/lines/{lineNo:\d+}
-  httx         440 ns/op    96 B/op    4 allocs/op
-  chi          927 ns/op   704 B/op    4 allocs/op
+RegexParam                             {*} /api/v{1..3}/orders/{orderId:\d+}/lines/{lineNo:\d+}
+  httx         518 ns/op    96 B/op    4 allocs/op
+  chi          976 ns/op   704 B/op    4 allocs/op
 
-Wildcard                               GET .../commits/{commitSha}/files/{filepath:*}
-  httx         212 ns/op     0 B/op    0 allocs/op
-  httprouter   223 ns/op   192 B/op    1 allocs/op
-  chi         1043 ns/op   704 B/op    4 allocs/op
-  gin          125 ns/op     0 B/op    0 allocs/op
-  net/http    1520 ns/op   608 B/op    9 allocs/op
+Wildcard                               {*} /api/v{1..3}/organizations/{orgId}/projects/{projectId}/repositories/{repoId}/branches/{branchName}/commits/{commitSha}/files/{filepath:*}
+  httx         279 ns/op     0 B/op    0 allocs/op
+  httprouter   289 ns/op   192 B/op    1 allocs/op
+  chi         1078 ns/op   704 B/op    4 allocs/op
+  gin          191 ns/op     0 B/op    0 allocs/op
+  net/http    1868 ns/op   668 B/op    9 allocs/op
 
-MethodMismatch                         OPTIONS .../payment_methods/{pmId}/transactions/{txnId}
-  httx         461 ns/op    96 B/op    1 allocs/op
-  httprouter  1197 ns/op   704 B/op    7 allocs/op
-  chi          602 ns/op   368 B/op    2 allocs/op
-  gin          581 ns/op   307 B/op    4 allocs/op
-  net/http    6127 ns/op  2627 B/op   75 allocs/op
+MethodMismatch                         {OPTIONS,TRACE} /api/v{1..3}/billing/accounts/{accountId}/payment_methods/{pmId}/transactions/{txnId}
+  httx         564 ns/op    80 B/op    1 allocs/op
+  httprouter  1273 ns/op   704 B/op    7 allocs/op
+  chi          634 ns/op   368 B/op    2 allocs/op
+  gin          588 ns/op   307 B/op    4 allocs/op
+  net/http    6448 ns/op  2627 B/op   75 allocs/op
 
-NotFound                               GET /api/v2/does/not/exist/at/all
-  httx         204 ns/op     0 B/op    0 allocs/op
-  httprouter   226 ns/op     0 B/op    0 allocs/op
-  chi          374 ns/op   368 B/op    2 allocs/op
-  gin          244 ns/op   131 B/op    1 allocs/op
-  net/http     458 ns/op   128 B/op    7 allocs/op
+NotFound                               {*} {/api/v9,/admin,/totally,/does/not,/api/v2/missing}/{random}/{random}
+  httx         156 ns/op     0 B/op    0 allocs/op
+  httprouter   221 ns/op     0 B/op    0 allocs/op
+  chi          380 ns/op   368 B/op    2 allocs/op
+  gin          245 ns/op   131 B/op    1 allocs/op
+  net/http     377 ns/op    82 B/op    4 allocs/op
 
-TrailingSlash                          GET /inbox/
-  httx          55 ns/op     0 B/op    0 allocs/op
-  httprouter   321 ns/op   184 B/op    3 allocs/op
-  gin          569 ns/op   280 B/op    8 allocs/op
-  net/http     122 ns/op    16 B/op    1 allocs/op
+TrailingSlash                          {*} {/inbox/, /articles/published/}
+  httx         148 ns/op     0 B/op    0 allocs/op
+  httprouter   329 ns/op    41 B/op    0 allocs/op
+  gin          416 ns/op   248 B/op    3 allocs/op
 
-CaseInsensitive                        GET /ARTICLES/Published/
-  httx          95 ns/op     0 B/op    0 allocs/op
-  httprouter   510 ns/op   216 B/op    4 allocs/op
-  gin          760 ns/op   408 B/op    8 allocs/op
+CaseInsensitive                        {*} {/ARTICLES/Published/, /Articles/published/, /INBOX/, /Inbox/}
+  httx         150 ns/op     0 B/op    0 allocs/op
+  httprouter   345 ns/op    45 B/op    0 allocs/op
+  gin          399 ns/op   272 B/op    3 allocs/op
 ```
 
-Due do compatibility with stdlib's `net/http.Request.SetPathValue` performance on param paths takes a hit,
-especially the wildcard. Raw performance of `gin`, `httprouter` and `httx` is the same as the underlying algorithm
-is the same :).
+`{*}` = all 5 methods registered (GET/POST/PUT/DELETE/PATCH) cycled. Where router has a single Allow value (e.g. MethodMismatch), only the method-mismatched verbs are tried.
 
-`gin`, `httprouter` and `net/http` don't support regex param validation. `chi` and `net/http` don't redirect on case-mismatched paths. `chi` doesn't redirect on trailing-slash mismatches either.
+Due to compatibility with stdlib's `net/http.Request.SetPathValue` performance on param paths takes a hit,
+especially the wildcard. Raw performance of `gin`, `httprouter` and `httx` trees is the same as the underlying
+algorithm is the same :).
+
+`gin`, `httprouter` and `net/http` don't support regex param validation. `chi` and `net/http` don't redirect on case-mismatched paths. `chi` doesn't redirect on trailing-slash mismatches at all; `net/http` redirects `/foo` → `/foo/` only when `/foo/` is the registered route (one-direction).
 
 All routers configured with status-only 404/405 handlers (no body) so miss-path numbers reflect dispatch cost, not default-body writing. `net/http` can't be customized this way — its 404 path always writes `"404 page not found\n"`.
 

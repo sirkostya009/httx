@@ -6,6 +6,7 @@
 package bench
 
 import (
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -154,20 +155,45 @@ func buildTemplates() []tmpl {
 // detection and creates realistic per-resource handler counts.
 var methods = []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 
-// statusOnly returns an http.HandlerFunc that writes the given status code and
-// no body. We use this to equalize miss-path callbacks across routers so the
-// bench measures dispatch overhead and not the cost of each router's default
-// "404 page not found\n"-style body writing.
-func statusOnly(code int) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(code)
+func status405(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(405)
+}
+
+func status404(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(404)
+}
+
+// hit is one bench iteration: a method + concrete URL path to dispatch.
+type hit struct {
+	method string
+	path   string
+}
+
+// newRNG returns a deterministic rng seeded the same way every run so
+// bench results are reproducible across runs and CI.
+func newRNG() *rand.Rand {
+	return rand.New(rand.NewPCG(42, 42))
+}
+
+// pick chooses one random element from a slice using the given rng.
+func pick[T any](r *rand.Rand, xs []T) T { return xs[r.IntN(len(xs))] }
+
+// randID generates a pseudo-random opaque identifier (alphanumeric).
+func randID(r *rand.Rand, n int) string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = alphabet[r.IntN(len(alphabet))]
 	}
+	return string(b)
 }
 
 func newHTTX(f bool) *httx.Mux {
 	m := httx.NewMux()
 	m.RedirectTrailingSlash = f
 	m.RedirectCaseInsensitivePath = f
+	m.OnPanic = nil       // disable panic recovery — match peers' default
+	m.GlobalOPTIONS = nil // disable OPTIONS auto-handling — match peers' default
 	h := func(w http.ResponseWriter, r *http.Request) error { return nil }
 	for _, t := range buildTemplates() {
 		for _, meth := range methods {
@@ -185,8 +211,9 @@ func newHTTPRouter(f bool) *httprouter.Router {
 	r := httprouter.New()
 	r.RedirectTrailingSlash = f
 	r.RedirectFixedPath = f
-	r.NotFound = statusOnly(404)
-	r.MethodNotAllowed = statusOnly(405)
+	r.HandleOPTIONS = false // match httx's nil GlobalOPTIONS
+	r.NotFound = http.HandlerFunc(status404)
+	r.MethodNotAllowed = http.HandlerFunc(status405)
 	h := func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {}
 	for _, t := range buildTemplates() {
 		path := t.colon
@@ -226,8 +253,8 @@ func newGin(f bool) *gin.Engine {
 
 func newChi(f bool) *chi.Mux {
 	r := chi.NewRouter()
-	r.NotFound(statusOnly(404))
-	r.MethodNotAllowed(statusOnly(405))
+	r.NotFound(status404)
+	r.MethodNotAllowed(status405)
 	h := func(w http.ResponseWriter, r *http.Request) {}
 	for _, t := range buildTemplates() {
 		for _, meth := range methods {
@@ -304,24 +331,36 @@ var (
 	plain = routers(false)
 	fix   = routers(true)
 	// chi does no redirects (verified: 404s on both case and slash mismatches).
-	tsrOnly = []routerCase{fix[0], fix[1], fix[3], fix[4]} // httx, httprouter, gin, net/http
+	// net/http only redirects /foo → /foo/ when /foo/ is registered; it doesn't
+	// do the reverse, which is what our bench tests, so drop it too.
+	tsrOnly = []routerCase{fix[0], fix[1], fix[3]} // httx, httprouter, gin
 	// stdlib + chi have no case-insensitive redirect.
 	caseFix = []routerCase{fix[0], fix[1], fix[3]} // httx, httprouter, gin
 	// httprouter, gin, stdlib have no regex param support; chi and httx do.
 	regexOnly = []routerCase{plain[0], plain[2]}
 )
 
-func benchmarkPath(b *testing.B, rs []routerCase, method, path string) {
+// benchmarkHits cycles through a precomputed deterministic-but-pseudorandom
+// list of (method, path) hits, exercising multiple URLs per benchmark
+// instead of one path repeated. Hits are pre-shuffled with a fixed seed so
+// runs are reproducible.
+func benchmarkHits(b *testing.B, rs []routerCase, hits []hit) {
 	b.Helper()
+	if len(hits) == 0 {
+		b.Fatal("no hits")
+	}
 	for _, rc := range rs {
 		b.Run(rc.name, func(b *testing.B) {
-			req := httptest.NewRequest(method, path, nil)
-			origPath := req.URL.Path
+			// per-iteration request — reused so we measure pure dispatch, not
+			// httptest.NewRequest allocations.
+			req := httptest.NewRequest("GET", "/", nil)
 			w := httptest.NewRecorder()
 
-			// warm caches + lazy init (regex machine pools, etc.)
-			for range 100 {
-				req.URL.Path = origPath
+			// warm caches + lazy init.
+			for i := range 200 {
+				h := hits[i%len(hits)]
+				req.Method = h.method
+				req.URL.Path = h.path
 				rc.h.ServeHTTP(w, req)
 			}
 
@@ -330,10 +369,13 @@ func benchmarkPath(b *testing.B, rs []routerCase, method, path string) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
+			i := 0
 			for b.Loop() {
-				// httx and httprouter mutate path on redirects, reset
-				req.URL.Path = origPath
+				h := hits[i%len(hits)]
+				req.Method = h.method
+				req.URL.Path = h.path
 				rc.h.ServeHTTP(w, req)
+				i++
 			}
 
 			b.StopTimer()
@@ -349,50 +391,148 @@ func benchmarkPath(b *testing.B, rs []routerCase, method, path string) {
 	}
 }
 
-// Realistic hit paths exercising varied depth and param counts.
+// Each Bench* generates a deterministic-but-pseudorandom set of hits (varying
+// method, path params, and API version where applicable). Hits cycle inside
+// benchmarkHits so the bench exercises many distinct URLs, not one path
+// repeated. Seed is fixed → replayable.
 
 func BenchmarkSimple(b *testing.B) {
-	// hits /healthz — shallow static, no params
-	benchmarkPath(b, plain, "GET", "/healthz")
+	// shallow static paths, varied methods. All topLevel routes are
+	// registered with every method in `methods`.
+	r := newRNG()
+	hits := make([]hit, 64)
+	for i := range hits {
+		hits[i] = hit{method: pick(r, methods), path: pick(r, topLevel)}
+	}
+	benchmarkHits(b, plain, hits)
 }
 
 func BenchmarkSingleParam(b *testing.B) {
-	// hits /api/v{ver}/sessions/{sessionId} — 1 param
-	benchmarkPath(b, plain, "GET", "/api/v2/sessions/sess-7f3e2d1c8b9a")
+	// /api/v{ver}/sessions/{sessionId} — 1 param. Varied ver, sessionId, method.
+	r := newRNG()
+	hits := make([]hit, 64)
+	for i := range hits {
+		ver := 1 + r.IntN(3)
+		hits[i] = hit{
+			method: pick(r, methods),
+			path:   "/api/v" + strconv.Itoa(ver) + "/sessions/sess-" + randID(r, 12),
+		}
+	}
+	benchmarkHits(b, plain, hits)
 }
 
 func BenchmarkMultiParam(b *testing.B) {
-	// hits /api/v{ver}/organizations/{orgId}/projects/{projectId}/repositories/{repoId}/branches/{branchName}/commits/{commitSha}/diff — 5 params, deep
-	benchmarkPath(b, plain, "GET", "/api/v2/organizations/acme-corp/projects/widget-svc/repositories/main-monorepo/branches/release-2026.04/commits/3a5f9d2b8e1c4f6a9d8b7c2e5f1a3b9c8d7e6f5a/diff")
+	// /api/v{ver}/organizations/{orgId}/projects/{projectId}/repositories/{repoId}/branches/{branchName}/commits/{commitSha}/diff — 5 params.
+	r := newRNG()
+	hits := make([]hit, 64)
+	for i := range hits {
+		ver := 1 + r.IntN(3)
+		hits[i] = hit{
+			method: pick(r, methods),
+			path: "/api/v" + strconv.Itoa(ver) + "/organizations/" + randID(r, 10) +
+				"/projects/" + randID(r, 10) +
+				"/repositories/" + randID(r, 12) +
+				"/branches/" + randID(r, 8) +
+				"/commits/" + randID(r, 40) +
+				"/diff",
+		}
+	}
+	benchmarkHits(b, plain, hits)
 }
 
 func BenchmarkRegexParam(b *testing.B) {
-	// hits /api/v{ver}/orders/{orderId:\d+}/lines/{lineNo:\d+} — 2 regex-validated params
-	benchmarkPath(b, regexOnly, "GET", "/api/v1/orders/12345/lines/678")
+	// /api/v{ver}/orders/{orderId:\d+}/lines/{lineNo:\d+} — 2 regex-validated params.
+	r := newRNG()
+	hits := make([]hit, 64)
+	for i := range hits {
+		ver := 1 + r.IntN(3)
+		hits[i] = hit{
+			method: pick(r, methods),
+			path:   "/api/v" + strconv.Itoa(ver) + "/orders/" + strconv.Itoa(r.IntN(1<<20)) + "/lines/" + strconv.Itoa(r.IntN(1024)),
+		}
+	}
+	benchmarkHits(b, regexOnly, hits)
 }
 
 func BenchmarkWildcard(b *testing.B) {
-	// hits .../commits/{commitSha}/files/{filepath:*} — catchall at depth, 5 params + tail
-	benchmarkPath(b, plain, "GET", "/api/v3/organizations/acme/projects/x/repositories/r/branches/main/commits/abc/files/src/internal/auth/middleware/oidc.go")
+	// .../commits/{commitSha}/files/{filepath:*} — catchall at depth, 5 params + tail.
+	r := newRNG()
+	tails := []string{
+		"src/main.go",
+		"src/internal/auth/middleware/oidc.go",
+		"docs/api/v1/reference.md",
+		"vendor/github.com/some/dep/file.go",
+		"pkg/util/helpers_test.go",
+		".github/workflows/ci.yml",
+	}
+	hits := make([]hit, 64)
+	for i := range hits {
+		ver := 1 + r.IntN(3)
+		hits[i] = hit{
+			method: pick(r, methods),
+			path: "/api/v" + strconv.Itoa(ver) + "/organizations/" + randID(r, 10) +
+				"/projects/" + randID(r, 10) +
+				"/repositories/" + randID(r, 12) +
+				"/branches/" + randID(r, 8) +
+				"/commits/" + randID(r, 40) +
+				"/files/" + pick(r, tails),
+		}
+	}
+	benchmarkHits(b, plain, hits)
 }
 
 func BenchmarkMethodMismatch(b *testing.B) {
-	// /api/v{ver}/billing/accounts/{accountId}/payment_methods/{pmId}/transactions/{txnId} is registered for
-	// GET/POST/PUT/DELETE/PATCH but not OPTIONS — exercises 405 + Allow-header build
-	benchmarkPath(b, plain, "OPTIONS", "/api/v2/billing/accounts/acct-7f3e2d1c/payment_methods/pm-9a8b/transactions/txn-456")
+	// OPTIONS / TRACE on registered paths — exercises 405 + Allow-header build.
+	// OPTIONS and TRACE are not in `methods`, so any deep template path with
+	// one of these methods triggers the 405 path.
+	mismatchMethods := []string{"OPTIONS", "TRACE"}
+	r := newRNG()
+	hits := make([]hit, 64)
+	for i := range hits {
+		ver := 1 + r.IntN(3)
+		hits[i] = hit{
+			method: pick(r, mismatchMethods),
+			path: "/api/v" + strconv.Itoa(ver) + "/billing/accounts/" + randID(r, 10) +
+				"/payment_methods/pm-" + randID(r, 8) +
+				"/transactions/txn-" + randID(r, 8),
+		}
+	}
+	benchmarkHits(b, plain, hits)
 }
 
 func BenchmarkNotFound(b *testing.B) {
-	// /api/v2/does/not/exist/at/all is not registered under any method — full miss-path walk
-	benchmarkPath(b, plain, "GET", "/api/v2/does/not/exist/at/all")
+	// Random unregistered paths.
+	r := newRNG()
+	prefixes := []string{"/api/v9", "/admin", "/totally", "/does/not", "/api/v2/missing"}
+	hits := make([]hit, 64)
+	for i := range hits {
+		hits[i] = hit{
+			method: pick(r, methods),
+			path:   pick(r, prefixes) + "/" + randID(r, 8) + "/" + randID(r, 6),
+		}
+	}
+	benchmarkHits(b, plain, hits)
 }
 
 func BenchmarkTrailingSlash(b *testing.B) {
-	// /inbox is registered, request has trailing slash — 301/308 redirect to /inbox
-	benchmarkPath(b, tsrOnly, "GET", "/inbox/")
+	// /inbox and /articles/published are the only two routes registered when f=true.
+	// Hit with trailing slash to force the redirect.
+	r := newRNG()
+	registered := []string{"/inbox/", "/articles/published/"}
+	hits := make([]hit, 64)
+	for i := range hits {
+		hits[i] = hit{method: pick(r, methods), path: pick(r, registered)}
+	}
+	benchmarkHits(b, tsrOnly, hits)
 }
 
 func BenchmarkCaseInsensitive(b *testing.B) {
-	// /articles/published is registered, request is wrong-cased + trailing slash — redirect
-	benchmarkPath(b, caseFix, "GET", "/ARTICLES/Published/")
+	// Wrong-cased + trailing slash variants of the registered redirect-only routes.
+	r := newRNG()
+	variants := []string{"/ARTICLES/Published/", "/Articles/published/", "/INBOX/", "/Inbox/"}
+	hits := make([]hit, 64)
+	for i := range hits {
+		hits[i] = hit{method: pick(r, methods), path: pick(r, variants)}
+	}
+	benchmarkHits(b, caseFix, hits)
 }
